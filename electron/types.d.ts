@@ -53,7 +53,11 @@ export interface DeleteResult {
   deleted: boolean
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open'
+export interface AppSettings {
+  theme: string
+}
+
+export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open' | 'menu:settings'
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
@@ -63,6 +67,8 @@ export interface EditorApi {
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>
   deletePath(targetPath: string): Promise<DeleteResult>
+  getSettings(): Promise<AppSettings>
+  setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   onMenu(channel: MenuChannel, handler: () => void): () => void
 }
 

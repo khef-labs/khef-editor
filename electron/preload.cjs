@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:save', 'menu:quick-open'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:save', 'menu:quick-open', 'menu:settings'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('editorApi', {
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
   listFiles: () => ipcRenderer.invoke('fs:listFiles'),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:delete', targetPath),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
   // Menu events (main → renderer). Returns an unsubscribe function.
   onMenu: (channel, handler) => {

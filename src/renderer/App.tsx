@@ -5,6 +5,8 @@ import { FileTree } from './components/FileTree'
 import { TabBar, type OpenTab } from './components/TabBar'
 import { CodeEditor } from './components/CodeEditor'
 import { QuickOpen } from './components/QuickOpen'
+import { SettingsPanel } from './components/SettingsPanel'
+import { themeById, applyTheme } from './lib/themes'
 
 export function App() {
   const [root, setRoot] = useState<string | null>(null)
@@ -14,6 +16,24 @@ export function App() {
   const [activePath, setActivePath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [themeId, setThemeId] = useState<string>('dark-plus')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Load persisted settings on mount and apply the theme.
+  useEffect(() => {
+    window.editorApi.getSettings().then((s) => {
+      const t = themeById(s.theme)
+      setThemeId(t.id)
+      applyTheme(t)
+    }).catch(() => { applyTheme(themeById('dark-plus')) })
+  }, [])
+
+  const selectTheme = useCallback((id: string) => {
+    const t = themeById(id)
+    setThemeId(t.id)
+    applyTheme(t)
+    void window.editorApi.setSettings({ theme: t.id })
+  }, [])
 
   const openFolder = useCallback(async () => {
     setError(null)
@@ -93,7 +113,10 @@ export function App() {
     const offQuick = window.editorApi.onMenu('menu:quick-open', () => {
       setQuickOpen((v) => !v)
     })
-    return () => { offOpen(); offSave(); offQuick() }
+    const offSettings = window.editorApi.onMenu('menu:settings', () => {
+      setSettingsOpen((v) => !v)
+    })
+    return () => { offOpen(); offSave(); offQuick(); offSettings() }
   }, [openFolder, saveActive])
 
   // In-renderer Cmd/Ctrl+P as a fallback (also fires when the menu accelerator is
@@ -119,7 +142,13 @@ export function App() {
         <button class="act-btn" title="Search (coming)"><SearchIcon size={22} /></button>
         <button class="act-btn" title="Source Control (coming)"><GitBranch size={22} /></button>
         <span class="act-spacer" />
-        <button class="act-btn" title="Settings (coming)"><Settings size={22} /></button>
+        <button
+          class={`act-btn${settingsOpen ? ' active' : ''}`}
+          title="Settings"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <Settings size={22} />
+        </button>
       </nav>
 
       {/* Sidebar / Explorer */}
@@ -140,23 +169,34 @@ export function App() {
 
       {/* Editor area */}
       <main class="editor-area">
-        <TabBar tabs={tabs} activePath={activePath} onActivate={setActivePath} onClose={closeTab} />
-        <div class="editor-body">
-          {activeTab ? (
-            <CodeEditor
-              path={activeTab.path}
-              filename={activeTab.name}
-              value={activeTab.content}
-              onChange={updateActiveContent}
-              onSave={saveActive}
-            />
-          ) : (
-            <div class="editor-empty">
-              <p class="big-logo">⌘</p>
-              <p class="hint">Open a file from the Explorer to start editing.</p>
+        {settingsOpen ? (
+          <SettingsPanel
+            activeTheme={themeId}
+            onSelectTheme={selectTheme}
+            onClose={() => setSettingsOpen(false)}
+          />
+        ) : (
+          <>
+            <TabBar tabs={tabs} activePath={activePath} onActivate={setActivePath} onClose={closeTab} />
+            <div class="editor-body">
+              {activeTab ? (
+                <CodeEditor
+                  path={activeTab.path}
+                  filename={activeTab.name}
+                  value={activeTab.content}
+                  themeKey={themeById(themeId).editorTheme}
+                  onChange={updateActiveContent}
+                  onSave={saveActive}
+                />
+              ) : (
+                <div class="editor-empty">
+                  <p class="big-logo">⌘</p>
+                  <p class="hint">Open a file from the Explorer to start editing.</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </main>
 
       {/* Status bar */}

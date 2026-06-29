@@ -8,6 +8,7 @@
 const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
 const { registerFsIpc } = require('./fs-ipc.cjs')
+const { registerSettingsIpc } = require('./settings.cjs')
 
 const isDev = process.env.KHEF_EDITOR_DEV === '1'
 const DEV_URL = 'http://localhost:5273'
@@ -105,6 +106,11 @@ function buildMenu() {
       label: 'Khef Editor',
       submenu: [
         { role: 'about' },
+        {
+          label: 'Settings…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow?.webContents.send('menu:settings'),
+        },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
@@ -159,6 +165,7 @@ app.whenReady().then(() => {
   installNavigationGuards()
   installCsp()
   registerFsIpc()
+  registerSettingsIpc()
   buildMenu()
   createWindow()
 

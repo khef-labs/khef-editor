@@ -4,22 +4,25 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { languageForFilename } from '../lib/language'
+import { editorThemeExtension } from '../lib/editorTheme'
+import type { EditorThemeKey } from '../lib/themes'
 
 interface CodeEditorProps {
   // Identity of the open doc. When this changes, the document is replaced.
   path: string
   filename: string
   value: string
+  themeKey: EditorThemeKey
   onChange: (value: string) => void
   onSave: () => void
 }
 
-export function CodeEditor({ path, filename, value, onChange, onSave }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, onChange, onSave }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
+  const themeComp = useRef(new Compartment())
   // Keep latest callbacks without rebuilding the view.
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
@@ -49,7 +52,7 @@ export function CodeEditor({ path, filename, value, onChange, onSave }: CodeEdit
           ...foldKeymap,
         ]),
         languageComp.current.of(languageForFilename(filename)),
-        oneDark,
+        themeComp.current.of(editorThemeExtension(themeKey)),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChangeRef.current(u.state.doc.toString())
         }),
@@ -83,6 +86,13 @@ export function CodeEditor({ path, filename, value, onChange, onSave }: CodeEdit
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
+
+  // Reconfigure the editor theme live when the app theme changes.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: themeComp.current.reconfigure(editorThemeExtension(themeKey)) })
+  }, [themeKey])
 
   return <div class="cm-host" ref={hostRef} />
 }
