@@ -16,6 +16,7 @@ const DEV_URL = 'http://localhost:5273'
 app.setName('Khef Editor')
 
 let mainWindow = null
+let isQuitting = false // true only during an explicit app quit (Cmd+Q / menu Quit)
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -40,6 +41,17 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  // Never let the window close unless the user is explicitly quitting (Cmd+Q). Any
+  // other close attempt (red traffic-light button, stray shortcut) hides the window
+  // instead of destroying it, so the app stays alive. Cmd+W is handled separately in
+  // the renderer and only closes tabs.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -133,7 +145,11 @@ function buildMenu() {
           click: () => mainWindow?.webContents.send('menu:save'),
         },
         { type: 'separator' },
-        { role: 'close' },
+        {
+          label: 'Close Tab',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => mainWindow?.webContents.send('menu:close-tab'),
+        },
       ],
     },
     { role: 'editMenu' },
@@ -156,7 +172,16 @@ function buildMenu() {
         { role: 'togglefullscreen' },
       ],
     },
-    { role: 'windowMenu' },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { role: 'front' },
+        // Intentionally NO "Close" item — Cmd+W is reserved for closing tabs only,
+        // and the window/app must never close via Cmd+W.
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -170,10 +195,20 @@ app.whenReady().then(() => {
   createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Re-show the hidden window (or recreate it) when the dock icon is clicked.
+    if (mainWindow) mainWindow.show()
+    else if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
+// Mark an explicit quit so the window 'close' guard lets it through.
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
 app.on('window-all-closed', () => {
+  // On macOS, apps normally stay alive when all windows close. We also keep the
+  // window alive (hidden) via the close guard, so this rarely fires — but keep the
+  // platform-conventional quit for non-macOS.
   if (process.platform !== 'darwin') app.quit()
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'preact/hooks'
+import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
 import { Files, Search as SearchIcon, GitBranch, Settings } from 'lucide-preact'
 import type { FsTreeEntry, FileListEntry } from '../../electron/types'
 import { FileTree } from './components/FileTree'
@@ -106,6 +106,16 @@ export function App() {
     })
   }, [activePath])
 
+  // Keep a ref to the active path so the Cmd+W menu handler (subscribed once) always
+  // closes the currently-active tab without re-subscribing on every activation.
+  const activePathRef = useRef<string | null>(null)
+  activePathRef.current = activePath
+
+  const closeActiveTab = useCallback(() => {
+    const path = activePathRef.current
+    if (path) closeTab(path) // no active tab → no-op (never closes the window)
+  }, [closeTab])
+
   // Menu wiring
   useEffect(() => {
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
@@ -116,8 +126,11 @@ export function App() {
     const offSettings = window.editorApi.onMenu('menu:settings', () => {
       setSettingsOpen((v) => !v)
     })
-    return () => { offOpen(); offSave(); offQuick(); offSettings() }
-  }, [openFolder, saveActive])
+    const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => {
+      closeActiveTab()
+    })
+    return () => { offOpen(); offSave(); offQuick(); offSettings(); offCloseTab() }
+  }, [openFolder, saveActive, closeActiveTab])
 
   // In-renderer Cmd/Ctrl+P as a fallback (also fires when the menu accelerator is
   // intercepted by a focused CodeMirror instance).
