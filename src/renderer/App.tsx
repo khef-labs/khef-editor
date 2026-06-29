@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'preact/hooks'
 import { Files, Search as SearchIcon, GitBranch, Settings } from 'lucide-preact'
-import type { FsTreeEntry } from '../../electron/types'
+import type { FsTreeEntry, FileListEntry } from '../../electron/types'
 import { FileTree } from './components/FileTree'
 import { TabBar, type OpenTab } from './components/TabBar'
 import { CodeEditor } from './components/CodeEditor'
+import { QuickOpen } from './components/QuickOpen'
 
 export function App() {
   const [root, setRoot] = useState<string | null>(null)
@@ -12,6 +13,7 @@ export function App() {
   const [tabs, setTabs] = useState<OpenTab[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [quickOpen, setQuickOpen] = useState(false)
 
   const openFolder = useCallback(async () => {
     setError(null)
@@ -27,26 +29,35 @@ export function App() {
     }
   }, [])
 
-  const openFile = useCallback(async (entry: FsTreeEntry) => {
-    if (entry.type !== 'file') return
+  const openPath = useCallback(async (filePath: string, name: string) => {
     setError(null)
     // Already open → just activate.
-    const existing = tabs.find((t) => t.path === entry.path)
+    const existing = tabs.find((t) => t.path === filePath)
     if (existing) {
-      setActivePath(entry.path)
+      setActivePath(filePath)
       return
     }
     try {
-      const res = await window.editorApi.readFile(entry.path)
+      const res = await window.editorApi.readFile(filePath)
       setTabs((prev) => [
         ...prev,
-        { path: res.path, name: entry.name, content: res.content, savedContent: res.content },
+        { path: res.path, name, content: res.content, savedContent: res.content },
       ])
       setActivePath(res.path)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [tabs])
+
+  const openFile = useCallback((entry: FsTreeEntry) => {
+    if (entry.type !== 'file') return
+    void openPath(entry.path, entry.name)
+  }, [openPath])
+
+  const pickQuickOpen = useCallback((entry: FileListEntry) => {
+    setQuickOpen(false)
+    void openPath(entry.path, entry.name)
+  }, [openPath])
 
   const updateActiveContent = useCallback((content: string) => {
     setTabs((prev) => prev.map((t) => (t.path === activePath ? { ...t, content } : t)))
@@ -79,8 +90,24 @@ export function App() {
   useEffect(() => {
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => void saveActive())
-    return () => { offOpen(); offSave() }
+    const offQuick = window.editorApi.onMenu('menu:quick-open', () => {
+      setQuickOpen((v) => !v)
+    })
+    return () => { offOpen(); offSave(); offQuick() }
   }, [openFolder, saveActive])
+
+  // In-renderer Cmd/Ctrl+P as a fallback (also fires when the menu accelerator is
+  // intercepted by a focused CodeMirror instance).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault()
+        if (root) setQuickOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [root])
 
   const activeTab = tabs.find((t) => t.path === activePath) ?? null
 
@@ -140,6 +167,10 @@ export function App() {
         </span>
         <span class="status-right">{error ? `⚠ ${error}` : 'khef-editor v0.1.0'}</span>
       </footer>
+
+      {quickOpen && root && (
+        <QuickOpen onPick={pickQuickOpen} onClose={() => setQuickOpen(false)} />
+      )}
     </div>
   )
 }

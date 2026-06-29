@@ -65,6 +65,33 @@ async function walkTree(absDir, depth, budget) {
   return entries
 }
 
+const MAX_FILE_LIST = 50000 // hard cap on the flat list the fuzzy finder matches against
+
+/**
+ * Flat-walk a directory, collecting workspace-relative file paths for the fuzzy
+ * finder. Same ignore set + no-symlink-follow + cycle safety as walkTree. Bounded.
+ */
+async function listFilesFlat(absDir, rootReal, out) {
+  if (out.length >= MAX_FILE_LIST) return
+  let dirents
+  try {
+    dirents = await fsp.readdir(absDir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const d of dirents) {
+    if (out.length >= MAX_FILE_LIST) return
+    if (d.isSymbolicLink()) continue // never follow symlinks out of the root
+    const childAbs = path.join(absDir, d.name)
+    if (d.isDirectory()) {
+      if (IGNORED_DIRS.has(d.name)) continue
+      await listFilesFlat(childAbs, rootReal, out)
+    } else if (d.isFile()) {
+      out.push({ path: childAbs, rel: path.relative(rootReal, childAbs), name: d.name })
+    }
+  }
+}
+
 function registerFsIpc() {
   // Open a folder via native dialog, or accept an explicit path. Sets the workspace root.
   ipcMain.handle('ws:open', async (event, requestedPath) => {
@@ -125,6 +152,15 @@ function registerFsIpc() {
     const budget = { count: 0 }
     const entries = await walkTree(real, d, budget)
     return { path: real, entries, truncated: budget.count >= MAX_TREE_ENTRIES }
+  })
+
+  // Flat list of all files under the workspace root, for the Cmd+P fuzzy finder.
+  ipcMain.handle('fs:listFiles', async () => {
+    const root = ws.getWorkspaceRoot()
+    if (!root) throw new Error('No workspace open')
+    const out = []
+    await listFilesFlat(root, root, out)
+    return { files: out, truncated: out.length >= MAX_FILE_LIST }
   })
 
   // Delete a file or empty/recursive directory. Confined to the root.

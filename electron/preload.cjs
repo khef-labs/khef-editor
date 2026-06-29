@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   readFile: (filePath) => ipcRenderer.invoke('fs:read', filePath),
   writeFile: (filePath, content) => ipcRenderer.invoke('fs:write', filePath, content),
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
+  listFiles: () => ipcRenderer.invoke('fs:listFiles'),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:delete', targetPath),
 
   // Menu events (main → renderer). Returns an unsubscribe function.

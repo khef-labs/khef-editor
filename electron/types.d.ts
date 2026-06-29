@@ -37,6 +37,17 @@ export interface TreeResult {
   truncated: boolean
 }
 
+export interface FileListEntry {
+  path: string
+  rel: string
+  name: string
+}
+
+export interface ListFilesResult {
+  files: FileListEntry[]
+  truncated: boolean
+}
+
 export interface DeleteResult {
   path: string
   deleted: boolean
@@ -50,6 +61,7 @@ export interface EditorApi {
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
+  listFiles(): Promise<ListFilesResult>
   deletePath(targetPath: string): Promise<DeleteResult>
   onMenu(channel: MenuChannel, handler: () => void): () => void
 }
