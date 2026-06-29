@@ -1,0 +1,61 @@
+// Shared types for the editorApi contextBridge surface. Imported by the renderer so
+// `window.editorApi` is fully typed, and serves as the contract the IPC layer fulfils.
+
+export type FsEntryType = 'file' | 'directory' | 'symlink'
+
+export interface FsTreeEntry {
+  name: string
+  path: string
+  type: FsEntryType
+  children?: FsTreeEntry[]
+}
+
+export interface OpenWorkspaceResult {
+  root: string
+}
+
+export interface CurrentWorkspaceResult {
+  root: string | null
+}
+
+export interface ReadFileResult {
+  path: string
+  content: string
+  mtimeMs: number
+  size: number
+}
+
+export interface WriteFileResult {
+  path: string
+  mtimeMs: number
+  size: number
+}
+
+export interface TreeResult {
+  path: string
+  entries: FsTreeEntry[]
+  truncated: boolean
+}
+
+export interface DeleteResult {
+  path: string
+  deleted: boolean
+}
+
+export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open'
+
+export interface EditorApi {
+  openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
+  currentWorkspace(): Promise<CurrentWorkspaceResult>
+  readFile(filePath: string): Promise<ReadFileResult>
+  writeFile(filePath: string, content: string): Promise<WriteFileResult>
+  tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
+  deletePath(targetPath: string): Promise<DeleteResult>
+  onMenu(channel: MenuChannel, handler: () => void): () => void
+}
+
+declare global {
+  interface Window {
+    editorApi: EditorApi
+  }
+}

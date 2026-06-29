@@ -1,0 +1,172 @@
+'use strict'
+
+// Khef Editor — Electron main process.
+// Owns the window, the app menu, and ALL filesystem access (via fs-ipc.cjs). The
+// renderer is sandboxed and reaches disk only through the typed contextBridge surface.
+// Renderer hardening here is the highest-priority security control (design §7.3 #1).
+
+const { app, BrowserWindow, Menu, session, shell } = require('electron')
+const path = require('node:path')
+const { registerFsIpc } = require('./fs-ipc.cjs')
+
+const isDev = process.env.KHEF_EDITOR_DEV === '1'
+const DEV_URL = 'http://localhost:5273'
+
+app.setName('Khef Editor')
+
+let mainWindow = null
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 720,
+    minHeight: 480,
+    title: 'Khef Editor',
+    backgroundColor: '#0f0f0f',
+    webPreferences: {
+      // Security posture (design §7.3 #1):
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  })
+
+  if (isDev) {
+    mainWindow.loadURL(DEV_URL)
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+}
+
+// Block the renderer from navigating away or opening arbitrary URLs/external schemes.
+function installNavigationGuards() {
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-navigate', (event, url) => {
+      const ok = isDev && url.startsWith(DEV_URL)
+      if (!ok) event.preventDefault()
+    })
+    contents.setWindowOpenHandler(({ url }) => {
+      // Allow opening http(s) links in the user's real browser; deny everything else.
+      if (/^https?:\/\//i.test(url)) {
+        shell.openExternal(url)
+      }
+      return { action: 'deny' }
+    })
+  })
+}
+
+// Strict Content-Security-Policy on the renderer document. No remote script, no eval,
+// no remote connections. All assets are bundled local files. In dev, Vite needs inline
+// styles and a websocket to localhost for HMR, so the policy is loosened minimally.
+function installCsp() {
+  const prodCsp = [
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+
+  const devCsp = [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    `connect-src 'self' ${DEV_URL} ws://localhost:5273`,
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join('; ')
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [isDev ? devCsp : prodCsp],
+      },
+    })
+  })
+}
+
+function buildMenu() {
+  const template = [
+    {
+      label: 'Khef Editor',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Folder…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu:open-folder'),
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu:save'),
+        },
+        { type: 'separator' },
+        { role: 'close' },
+      ],
+    },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Quick Open…',
+          accelerator: 'CmdOrCtrl+P',
+          click: () => mainWindow?.webContents.send('menu:quick-open'),
+        },
+        { type: 'separator' },
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+app.whenReady().then(() => {
+  installNavigationGuards()
+  installCsp()
+  registerFsIpc()
+  buildMenu()
+  createWindow()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})

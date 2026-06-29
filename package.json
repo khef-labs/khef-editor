@@ -1,0 +1,54 @@
+{
+  "name": "khef-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Electron code editor (VS Code-lite) — file tree, fuzzy finder, CodeMirror editor, git. No plugins, no marketplace, no extension host.",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on tcp:5273 && cross-env KHEF_EDITOR_DEV=1 electron .",
+    "build": "npm run build:renderer",
+    "build:renderer": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "npm run build && electron-builder --mac dir --publish never -c.mac.identity=null",
+    "dist": "npm run build && electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.1",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "dependencies": {
+    "preact": "^10.25.3"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
+  "build": {
+    "appId": "ai.khef.editor",
+    "productName": "Khef Editor",
+    "directories": {
+      "output": "dist-app",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg"
+      ]
+    }
+  }
+}
