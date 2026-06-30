@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   writeFile: (filePath, content) => ipcRenderer.invoke('fs:write', filePath, content),
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
   listFiles: () => ipcRenderer.invoke('fs:listFiles'),
+  search: (query, options) => ipcRenderer.invoke('fs:search', query, options ?? {}),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:delete', targetPath),
 
   // Settings

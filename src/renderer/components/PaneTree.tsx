@@ -7,6 +7,7 @@ interface PaneTreeProps {
   node: LayoutNode
   activeLeafId: string
   themeId: string
+  gotoLine?: { path: string; line: number; token: number } | null
   onFocus: (leafId: string) => void
   onActivateTab: (leafId: string, path: string) => void
   onCloseTab: (leafId: string, path: string) => void
@@ -104,7 +105,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, onFocus, onActivateTab, onCloseTab, onChangeContent, onSave }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onSave }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -112,6 +113,7 @@ function Leaf({ leaf, activeLeafId, themeId, onFocus, onActivateTab, onCloseTab,
       group={group}
       isFocused={leaf.id === activeLeafId}
       themeId={themeId}
+      gotoLine={gotoLine}
       onFocus={() => onFocus(leaf.id)}
       onActivateTab={(path) => onActivateTab(leaf.id, path)}
       onCloseTab={(path) => onCloseTab(leaf.id, path)}

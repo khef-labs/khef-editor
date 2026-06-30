@@ -7,6 +7,7 @@ interface EditorGroupViewProps {
   group: EditorGroup
   isFocused: boolean
   themeId: string
+  gotoLine?: { path: string; line: number; token: number } | null
   onFocus: () => void
   onActivateTab: (path: string) => void
   onCloseTab: (path: string) => void
@@ -15,7 +16,7 @@ interface EditorGroupViewProps {
 }
 
 export function EditorGroupView({
-  group, isFocused, themeId,
+  group, isFocused, themeId, gotoLine,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onSave,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
@@ -40,6 +41,7 @@ export function EditorGroupView({
             filename={activeTab.name}
             value={activeTab.content}
             themeKey={themeById(themeId).editorTheme}
+            gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
             onChange={(content) => onChangeContent(activeTab.path, content)}
             onSave={() => onSave(activeTab.path)}
           />

@@ -14,11 +14,13 @@ interface CodeEditorProps {
   filename: string
   value: string
   themeKey: EditorThemeKey
+  // A jump request: { line, token } — bump `token` to re-trigger a jump to the same line.
+  gotoLine?: { line: number; token: number } | null
   onChange: (value: string) => void
   onSave: () => void
 }
 
-export function CodeEditor({ path, filename, value, themeKey, onChange, onSave }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
@@ -93,6 +95,20 @@ export function CodeEditor({ path, filename, value, themeKey, onChange, onSave }
     if (!view) return
     view.dispatch({ effects: themeComp.current.reconfigure(editorThemeExtension(themeKey)) })
   }, [themeKey])
+
+  // Jump to a line (1-based) when a search result is clicked. The token lets the same
+  // line re-trigger a jump.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !gotoLine) return
+    const lineNo = Math.max(1, Math.min(gotoLine.line, view.state.doc.lines))
+    const lineInfo = view.state.doc.line(lineNo)
+    view.dispatch({
+      selection: { anchor: lineInfo.from },
+      effects: EditorView.scrollIntoView(lineInfo.from, { y: 'center' }),
+    })
+    view.focus()
+  }, [gotoLine?.token])
 
   return <div class="cm-host" ref={hostRef} />
 }

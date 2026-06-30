@@ -4,6 +4,7 @@ import type { FsTreeEntry, FileListEntry } from '../../electron/types'
 import { FileTree } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
 import { SettingsPanel } from './components/SettingsPanel'
+import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { themeById, applyTheme } from './lib/themes'
 import {
@@ -19,6 +20,9 @@ export function App() {
   const [activeLeafId, setActiveLeafId] = useState<string>(() => '')
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
+  const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
+  const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -89,6 +93,13 @@ export function App() {
   const pickQuickOpen = useCallback((entry: FileListEntry) => {
     setQuickOpen(false)
     void openPath(entry.path, entry.name)
+  }, [openPath])
+
+  const openMatch = useCallback((filePath: string, fileName: string, line: number) => {
+    void openPath(filePath, fileName).then(() => {
+      jumpTokenRef.current += 1
+      setPendingJump({ path: filePath, line, token: jumpTokenRef.current })
+    })
   }, [openPath])
 
   const activateTab = useCallback((leafId: string, path: string) => {
@@ -248,8 +259,20 @@ export function App() {
   return (
     <div class="shell">
       <nav class="activitybar">
-        <button class="act-btn active" title="Explorer"><Files size={22} /></button>
-        <button class="act-btn" title="Search (coming)"><SearchIcon size={22} /></button>
+        <button
+          class={`act-btn${sidebarView === 'explorer' && !settingsOpen ? ' active' : ''}`}
+          title="Explorer"
+          onClick={() => { setSidebarView('explorer'); setSettingsOpen(false) }}
+        >
+          <Files size={22} />
+        </button>
+        <button
+          class={`act-btn${sidebarView === 'search' && !settingsOpen ? ' active' : ''}`}
+          title="Search"
+          onClick={() => { setSidebarView('search'); setSettingsOpen(false) }}
+        >
+          <SearchIcon size={22} />
+        </button>
         <button class="act-btn" title="Source Control (coming)"><GitBranch size={22} /></button>
         <span class="act-spacer" />
         <button
@@ -262,18 +285,32 @@ export function App() {
       </nav>
 
       <aside class="sidebar" data-testid="sidebar">
-        <div class="sidebar-header">Explorer</div>
-        {root ? (
-          <>
-            <div class="explorer-root">{rootName}</div>
-            <FileTree entries={entries} activePath={treeActivePath} onOpenFile={openFile} />
-          </>
-        ) : (
-          <div class="sidebar-empty">
-            <p class="hint">You have not yet opened a folder.</p>
-            <button class="open-btn" onClick={() => void openFolder()}>Open Folder</button>
-          </div>
-        )}
+        {/* Both views stay mounted; we toggle visibility so each keeps its state
+            (the search query/results survive switching to Explorer and back). */}
+        <div class={`sidebar-view${sidebarView === 'explorer' ? '' : ' hidden'}`}>
+          <div class="sidebar-header">Explorer</div>
+          {root ? (
+            <>
+              <div class="explorer-root">{rootName}</div>
+              <FileTree entries={entries} activePath={treeActivePath} onOpenFile={openFile} />
+            </>
+          ) : (
+            <div class="sidebar-empty">
+              <p class="hint">You have not yet opened a folder.</p>
+              <button class="open-btn" onClick={() => void openFolder()}>Open Folder</button>
+            </div>
+          )}
+        </div>
+        <div class={`sidebar-view${sidebarView === 'search' ? '' : ' hidden'}`}>
+          {root ? (
+            <SearchPanel onOpenMatch={openMatch} />
+          ) : (
+            <>
+              <div class="sidebar-header">Search</div>
+              <div class="sidebar-empty"><p class="hint">Open a folder to search.</p></div>
+            </>
+          )}
+        </div>
       </aside>
 
       <main class="editor-area">
@@ -289,6 +326,7 @@ export function App() {
               node={tree}
               activeLeafId={activeLeafId}
               themeId={themeId}
+              gotoLine={pendingJump}
               onFocus={setActiveLeafId}
               onActivateTab={activateTab}
               onCloseTab={closeTab}

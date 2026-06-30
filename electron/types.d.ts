@@ -48,6 +48,32 @@ export interface ListFilesResult {
   truncated: boolean
 }
 
+export interface SearchMatch {
+  line: number
+  col: number
+  text: string
+  matchStart: number
+  matchEnd: number
+}
+
+export interface SearchFileResult {
+  file: string // workspace-relative path
+  path: string // absolute path
+  matches: SearchMatch[]
+}
+
+export interface SearchOptions {
+  caseSensitive?: boolean
+  wholeWord?: boolean
+  regex?: boolean
+}
+
+export interface SearchResult {
+  files: SearchFileResult[]
+  total: number
+  truncated: boolean
+}
+
 export interface DeleteResult {
   path: string
   deleted: boolean
@@ -66,6 +92,7 @@ export interface EditorApi {
   writeFile(filePath: string, content: string): Promise<WriteFileResult>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>
+  search(query: string, options?: SearchOptions): Promise<SearchResult>
   deletePath(targetPath: string): Promise<DeleteResult>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
