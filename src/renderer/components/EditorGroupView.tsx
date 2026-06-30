@@ -14,13 +14,14 @@ interface EditorGroupViewProps {
   onChangeContent: (path: string, content: string) => void
   onSave: (path: string) => void
   onOpenFolder?: () => void
+  onOpenFile?: () => void
   onOpenSettings?: () => void
 }
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onSave,
-  onOpenFolder, onOpenSettings,
+  onOpenFolder, onOpenFile, onOpenSettings,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
 
@@ -49,19 +50,18 @@ export function EditorGroupView({
             onSave={() => onSave(activeTab.path)}
           />
         ) : (
-          <WelcomePane onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
+          <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} />
         )}
       </div>
     </section>
   )
 }
 
-function WelcomePane({ onOpenFolder, onOpenSettings }: { onOpenFolder?: () => void; onOpenSettings?: () => void }) {
-  // Only actions that make sense before a folder is open. "Open File" has no command
-  // yet, so it's shown disabled; Settings opens the panel.
+function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings }: { onOpenFolder?: () => void; onOpenFile?: () => void; onOpenSettings?: () => void }) {
+  // Actions that make sense before a folder is open.
   const rows: { label: string; keys: string[]; onClick?: () => void }[] = [
-    { label: 'Open Folder', keys: ['⌘', 'O'], onClick: onOpenFolder },
-    { label: 'Open File', keys: [] },
+    { label: 'Open File', keys: ['⌘', 'O'], onClick: onOpenFile },
+    { label: 'Open Folder', keys: ['⇧', '⌘', 'O'], onClick: onOpenFolder },
     { label: 'Settings', keys: ['⌘', ','], onClick: onOpenSettings },
   ]
   return (

@@ -25,6 +25,7 @@ export interface ReadFileResult {
   size: number
 }
 
+
 export interface WriteFileResult {
   path: string
   mtimeMs: number
@@ -89,13 +90,15 @@ export interface AppSettings {
   sidebarWidth: number
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split'
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
+  openLooseFile(): Promise<ReadFileResult | null>
   currentWorkspace(): Promise<CurrentWorkspaceResult>
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>
+  writeLooseFile(filePath: string, content: string): Promise<WriteFileResult>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>
   search(query: string, options?: SearchOptions): Promise<SearchResult>

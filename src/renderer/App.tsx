@@ -118,8 +118,13 @@ export function App() {
     }
   }, [])
 
-  // Open a file into the focused leaf (or activate it there if already open).
-  const openPath = useCallback(async (filePath: string, name: string) => {
+  // Open a file into the focused leaf (or activate it there if already open). When
+  // `preloaded` is given (loose file already read in main), skip the confined read.
+  const openPath = useCallback(async (
+    filePath: string,
+    name: string,
+    preloaded?: { content: string; loose?: boolean },
+  ) => {
     setError(null)
     const leaf = findLeaf(tree, activeLeafId)
     const already = leaf?.tabs.find((t) => t.path === filePath)
@@ -128,15 +133,19 @@ export function App() {
       return
     }
     let content: string
-    try {
-      const res = await window.editorApi.readFile(filePath)
-      content = res.content
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      return
+    if (preloaded) {
+      content = preloaded.content
+    } else {
+      try {
+        const res = await window.editorApi.readFile(filePath)
+        content = res.content
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+        return
+      }
     }
     setTree((prev) => updateLeaf(prev, activeLeafId, (l) => {
-      const tab: OpenTab = { path: filePath, name, content, savedContent: content }
+      const tab: OpenTab = { path: filePath, name, content, savedContent: content, loose: preloaded?.loose }
       return { ...l, tabs: [...l.tabs, tab], activePath: filePath }
     }))
   }, [tree, activeLeafId])
@@ -144,6 +153,21 @@ export function App() {
   const openFile = useCallback((entry: FsTreeEntry) => {
     if (entry.type !== 'file') return
     void openPath(entry.path, entry.name)
+  }, [openPath])
+
+  // Open a single file via native dialog as a loose tab — does NOT change the workspace
+  // root or the tree. The file is read in main (it may live outside any root) and opens
+  // as a detached tab that saves back through the per-file loose-write gate.
+  const openFileViaDialog = useCallback(async () => {
+    setError(null)
+    try {
+      const res = await window.editorApi.openLooseFile()
+      if (!res) return
+      const name = res.path.split('/').pop() ?? res.path
+      await openPath(res.path, name, { content: res.content, loose: true })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }, [openPath])
 
   const pickQuickOpen = useCallback((entry: FileListEntry) => {
@@ -174,7 +198,11 @@ export function App() {
     const tab = leaf?.tabs.find((t) => t.path === path)
     if (!tab) return
     try {
-      await window.editorApi.writeFile(tab.path, tab.content)
+      if (tab.loose) {
+        await window.editorApi.writeLooseFile(tab.path, tab.content)
+      } else {
+        await window.editorApi.writeFile(tab.path, tab.content)
+      }
       // Mark saved in EVERY leaf showing this file (split views stay in sync).
       setTree((prev) => mapLeaves(prev, (l) => ({
         ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, savedContent: t.content } : t)),
@@ -265,16 +293,17 @@ export function App() {
     if (leaf?.activePath) closeTab(leaf.id, leaf.activePath)
   }, [closeTab])
 
-  // Menu wiring (save / close-tab / quick-open / settings / open-folder).
+  // Menu wiring (open-file / open-folder / save / close-tab / quick-open / settings / split).
   useEffect(() => {
+    const offOpenFile = window.editorApi.onMenu('menu:open-file', () => void openFileViaDialog())
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => saveFocused())
     const offQuick = window.editorApi.onMenu('menu:quick-open', () => setQuickOpen((v) => !v))
     const offSettings = window.editorApi.onMenu('menu:settings', () => setSettingsOpen((v) => !v))
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
-    return () => { offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit() }
-  }, [openFolder, saveFocused, closeFocusedTab, splitFocused])
+    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit() }
+  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -395,6 +424,7 @@ export function App() {
               onSave={(leafId, path) => void saveTab(leafId, path)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
+              onOpenFile={() => void openFileViaDialog()}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>

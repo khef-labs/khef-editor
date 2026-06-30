@@ -15,6 +15,7 @@ interface PaneTreeProps {
   onSave: (leafId: string, path: string) => void
   onResize: (splitId: string, sizes: number[]) => void
   onOpenFolder?: () => void
+  onOpenFile?: () => void
   onOpenSettings?: () => void
 }
 
@@ -107,7 +108,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onSave, onOpenFolder, onOpenSettings }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onSave, onOpenFolder, onOpenFile, onOpenSettings }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -122,6 +123,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       onChangeContent={(path, content) => onChangeContent(leaf.id, path, content)}
       onSave={(path) => onSave(leaf.id, path)}
       onOpenFolder={onOpenFolder}
+      onOpenFile={onOpenFile}
       onOpenSettings={onOpenSettings}
     />
   )

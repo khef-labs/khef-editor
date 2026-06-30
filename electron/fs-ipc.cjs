@@ -13,6 +13,10 @@ const ws = require('./workspace.cjs')
 const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB text cap (design §7.3 #6)
 const MAX_TREE_ENTRIES = 20000 // bound a pathological folder from freezing the UI
 
+// Realpaths the user opened via the loose "Open File" dialog. Only these may be saved
+// back outside the workspace root — the per-file write gate for detached files.
+const looseFiles = new Set()
+
 // Directories the tree walk skips (perf + leak-surface). Mirrors khef's ignore set.
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', '.hg', '.svn', '__pycache__',
@@ -107,6 +111,45 @@ function registerFsIpc() {
     assertString(dir, 'path')
     const root = await ws.setWorkspaceRoot(dir)
     return { root }
+  })
+
+  // Open a single "loose" file via native dialog WITHOUT changing the workspace root.
+  // The path may live anywhere, so this bypasses the workspace seam — but the path can
+  // only come from the trusted OS dialog (not the renderer), and we realpath + size-cap
+  // it. The realpath is recorded in `looseFiles` so it can later be saved back via
+  // `fs:writeLooseFile` and nothing else.
+  ipcMain.handle('fs:openLooseFile', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win, { properties: ['openFile'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const real = await fsp.realpath(result.filePaths[0])
+    const st = await fsp.stat(real)
+    if (!st.isFile()) throw new Error('Not a file')
+    if (st.size > MAX_FILE_SIZE) {
+      throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
+    }
+    const content = await fsp.readFile(real, 'utf8')
+    looseFiles.add(real)
+    return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
+  })
+
+  // Write back a loose file. Only permitted for a realpath the user actually opened
+  // via the loose dialog this session — never an arbitrary renderer-supplied path.
+  ipcMain.handle('fs:writeLooseFile', async (_event, requestedPath, content) => {
+    assertString(requestedPath, 'path')
+    if (typeof content !== 'string') throw new Error('content must be a string')
+    if (Buffer.byteLength(content, 'utf8') > MAX_FILE_SIZE) {
+      throw new Error('Content exceeds max file size')
+    }
+    // The tab carries the realpath we returned from openLooseFile. Re-realpath to be
+    // safe against symlink swaps, then require an exact allowlist match.
+    const real = await fsp.realpath(path.resolve(requestedPath))
+    if (!looseFiles.has(real)) {
+      throw new Error('File was not opened via Open File')
+    }
+    await fsp.writeFile(real, content, 'utf8')
+    const st = await fsp.stat(real)
+    return { path: real, mtimeMs: st.mtimeMs, size: st.size }
   })
 
   ipcMain.handle('ws:current', async () => {

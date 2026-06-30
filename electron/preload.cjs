@@ -8,16 +8,18 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
   openWorkspace: (dirPath) => ipcRenderer.invoke('ws:open', dirPath ?? null),
+  openLooseFile: () => ipcRenderer.invoke('fs:openLooseFile'),
   currentWorkspace: () => ipcRenderer.invoke('ws:current'),
 
   // Filesystem (all confined to the open workspace root in the main process)
   readFile: (filePath) => ipcRenderer.invoke('fs:read', filePath),
   writeFile: (filePath, content) => ipcRenderer.invoke('fs:write', filePath, content),
+  writeLooseFile: (filePath, content) => ipcRenderer.invoke('fs:writeLooseFile', filePath, content),
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
   listFiles: () => ipcRenderer.invoke('fs:listFiles'),
   search: (query, options) => ipcRenderer.invoke('fs:search', query, options ?? {}),

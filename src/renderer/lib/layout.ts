@@ -8,6 +8,9 @@ export interface OpenTab {
   name: string
   content: string
   savedContent: string
+  // True for files opened via "Open File" outside the workspace root. These save back
+  // through the per-file loose-write gate, not the workspace-confined write.
+  loose?: boolean
 }
 
 export interface LeafNode {

@@ -136,8 +136,13 @@ function buildMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Open Folder…',
+          label: 'Open File…',
           accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu:open-file'),
+        },
+        {
+          label: 'Open Folder…',
+          accelerator: 'Shift+CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:open-folder'),
         },
         {
