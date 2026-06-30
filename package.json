@@ -13,6 +13,7 @@
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "package": "npm run build && electron-builder --mac dir --publish never -c.mac.identity=null",
+    "install:app": "bash scripts/install-app.sh",
     "dist": "npm run build && electron-builder --mac dmg --publish never"
   },
   "devDependencies": {

@@ -36,19 +36,26 @@ npm run build        # build renderer to dist/
 
 ## Build the Mac app (Spotlight / Cmd+Space launchable)
 
+One command builds, installs to `/Applications`, and launches it:
+
 ```bash
-npm run package      # builds renderer + unsigned .app into dist-app/mac-arm64/
+npm run install:app
 ```
 
-Install it to `/Applications` so Spotlight indexes it:
+It quits any running instance, packages the app, copies it to `/Applications`,
+clears the quarantine flag, registers it with Launch Services (so Spotlight finds
+it), and relaunches. Works on Apple Silicon (`mac-arm64`) and Intel (`mac`).
+
+To do it by hand instead:
 
 ```bash
+npm run package      # builds renderer + unsigned .app into dist-app/mac-arm64/
 rm -rf "/Applications/Khef Editor.app"
 cp -R "dist-app/mac-arm64/Khef Editor.app" /Applications/
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Khef Editor.app"
 ```
 
-Use `npm run dist` instead of `npm run package` to produce a DMG.
+Use `npm run dist` to produce a DMG instead of a raw `.app`.
 
 **Notes**
 
