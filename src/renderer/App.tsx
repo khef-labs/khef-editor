@@ -6,6 +6,7 @@ import { QuickOpen } from './components/QuickOpen'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
+import { OpenEditors } from './components/OpenEditors'
 import { themeById, applyTheme } from './lib/themes'
 import {
   makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, removeLeaf, soloLeaf, setSplitSizes,
@@ -339,10 +340,11 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [root, splitFocused, soloFocusedPane, closeFocusedPane])
 
-  const focusedLeaf = findLeaf(tree, activeLeafId) ?? leaves(tree)[0]
+  const allLeaves = leaves(tree)
+  const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
   const treeActivePath = focusedLeaf?.activePath ?? null
-  const paneCount = leaves(tree).length
+  const paneCount = allLeaves.length
 
   return (
     <div class="shell" style={{ '--sidebar-w': sidebarCollapsed ? '0px' : `${sidebarWidth}px` } as Record<string, string>}>
@@ -377,6 +379,12 @@ export function App() {
             (the search query/results survive switching to Explorer and back). */}
         <div class={`sidebar-view${sidebarView === 'explorer' ? '' : ' hidden'}`}>
           <div class="sidebar-header">Explorer</div>
+          <OpenEditors
+            leaves={allLeaves}
+            activeLeafId={activeLeafId}
+            onActivate={activateTab}
+            onClose={closeTab}
+          />
           {root ? (
             <>
               <div class="explorer-root">{rootName}</div>

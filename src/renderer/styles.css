@@ -138,6 +138,90 @@ html, body, #app {
   color: var(--fg);
   padding: 4px 12px;
 }
+/* Open Editors (VS Code-style list of every open tab across panes). */
+.open-editors { padding-bottom: 4px; }
+.open-editors-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 12px 4px 8px;
+  color: var(--fg);
+}
+.open-editors-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.open-editors-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  padding: 2px 12px 2px 28px;
+}
+.open-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 22px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  min-width: 0;
+}
+.open-editor-row:hover { background: var(--row-hover); }
+.open-editor-row.active { background: var(--row-active); }
+.open-editor-close {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--fg);
+  padding: 0;
+}
+.open-editor-close .x-icon { opacity: 0; }
+.open-editor-close .dirty-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg);
+  opacity: 0;
+}
+/* Dirty + not hovering the row → show the dot, hide the ×. */
+.open-editor-close.dirty .dirty-dot { opacity: 0.9; }
+/* Hovering the row → reveal the × (and hide the dot) for any tab. */
+.open-editor-row:hover .open-editor-close .x-icon { opacity: 1; }
+.open-editor-row:hover .open-editor-close .dirty-dot { opacity: 0; }
+.open-editor-close:hover { background: var(--bg-tab-inactive); }
+/* Name always shows in full (never shrinks); the dir path is the only thing that
+   ellipsizes, claiming whatever space is left after the name. */
+.open-editor-name {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.open-editor-dir {
+  flex: 1 1 0;
+  color: var(--fg-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .sidebar-empty {
   padding: 16px;
   display: flex;
