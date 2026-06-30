@@ -1,12 +1,61 @@
 import { useEffect, useRef } from 'preact/hooks'
 import { EditorState, Compartment } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
+import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
+import type { ViewUpdate } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { languageForFilename } from '../lib/language'
 import { editorThemeExtension } from '../lib/editorTheme'
 import type { EditorThemeKey } from '../lib/themes'
+
+// Overview-ruler cursor marker: a small tick on the editor's right edge showing where
+// the cursor line sits within the whole document (VS Code's scrollbar cursor marker).
+const cursorOverviewMarker = ViewPlugin.fromClass(
+  class {
+    marker: HTMLDivElement
+    view: EditorView
+    constructor(view: EditorView) {
+      this.view = view
+      this.marker = document.createElement('div')
+      this.marker.className = 'cm-cursor-overview'
+      // Appended to .cm-editor (does not scroll) so the tick stays fixed to the viewport
+      // right edge at the cursor row's on-screen Y.
+      view.dom.appendChild(this.marker)
+      // Defer the first placement until after the view has been measured.
+      view.requestMeasure({ read: () => this.reposition(view) })
+    }
+    update(update: ViewUpdate) {
+      // Reposition on cursor move, edits, and any geometry/viewport change (scrolling).
+      this.reposition(update.view)
+    }
+    reposition(view: EditorView) {
+      // VS Code's overview-ruler cursor marker is ALWAYS document-relative: it sits in the
+      // scrollbar lane at (cursorLine / totalLines) of the editor height, regardless of
+      // where the viewport is scrolled. It does not track the cursor's on-screen row.
+      const head = view.state.selection.main.head
+      const totalLines = view.state.doc.lines
+      const cursorLine = view.state.doc.lineAt(head).number
+      const frac = totalLines > 1 ? (cursorLine - 1) / (totalLines - 1) : 0
+      const trackH = view.dom.clientHeight
+      const top = Math.round(frac * (trackH - 3))
+      this.marker.style.display = 'block'
+      this.marker.style.top = `${top}px`
+    }
+    destroy() {
+      this.marker.remove()
+    }
+  },
+  {
+    // coordsAtPos is viewport-relative, so reposition on scroll too.
+    eventHandlers: {
+      scroll() {
+        const self = this as unknown as { reposition(v: EditorView): void; view?: EditorView }
+        if (self.view) self.reposition(self.view)
+      },
+    },
+  },
+)
 
 interface CodeEditorProps {
   // Identity of the open doc. When this changes, the document is replaced.
@@ -40,6 +89,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
+        cursorOverviewMarker,
         EditorView.lineWrapping,
         history(),
         foldGutter(),
@@ -61,7 +111,35 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px' },
-          '.cm-scroller': { fontFamily: "'SF Mono', ui-monospace, Menlo, monospace" },
+          '.cm-scroller': {
+            fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",
+            overflow: 'auto',
+          },
+          // Force a persistent (non-overlay) scrollbar. Styling ::-webkit-scrollbar with
+          // an explicit width + non-overlay appearance keeps it from fading like the macOS
+          // overlay scrollbar. Do NOT also set scrollbar-color — that re-enables overlay.
+          '.cm-scroller::-webkit-scrollbar': {
+            width: '14px',
+            height: '14px',
+            WebkitAppearance: 'none',
+          },
+          '.cm-scroller::-webkit-scrollbar-track': { background: 'transparent' },
+          '.cm-scroller::-webkit-scrollbar-thumb': {
+            background: 'var(--scrollbar-thumb)',
+            borderRadius: '7px',
+            border: '3px solid transparent',
+            backgroundClip: 'content-box',
+            minHeight: '40px',
+          },
+          '.cm-scroller::-webkit-scrollbar-thumb:hover': {
+            background: 'var(--scrollbar-thumb-hover)',
+            backgroundClip: 'content-box',
+          },
+          // Active-line highlight. !important is required to beat the package theme's own
+          // .cm-activeLine rule (e.g. oneDark's faint #6699ff0b), which otherwise wins on
+          // specificity despite this being declared later.
+          '.cm-activeLine': { backgroundColor: 'var(--active-line) !important' },
+          '.cm-activeLineGutter': { backgroundColor: 'var(--active-line) !important' },
         }),
       ],
     })

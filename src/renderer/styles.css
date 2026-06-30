@@ -16,6 +16,10 @@
   --accent: #0e639c;
   --row-hover: #2a2d2e;
   --row-active: #094771;
+  --scrollbar-thumb: #424242;       /* visible editor scrollbar */
+  --scrollbar-thumb-hover: #5a5a5a;
+  --active-line: #323842;           /* cursor indicator line highlight */
+  --cursor-overview: #a0a0a0;        /* right-edge cursor position marker */
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
 }
@@ -507,8 +511,19 @@ html, body, #app {
 .status-right { color: var(--fg-dim); }
 
 /* CodeMirror tweaks to sit flush in the pane */
-.cm-editor { height: 100%; }
+.cm-editor { height: 100%; position: relative; }
 .cm-editor.cm-focused { outline: none; }
+/* Overview-ruler cursor marker: a short tick on the right edge marking where the cursor
+   line sits in the document (like VS Code's scrollbar cursor marker). */
+.cm-cursor-overview {
+  position: absolute;
+  right: 0;               /* in the scrollbar lane, like VS Code's overview ruler */
+  width: 14px;
+  height: 2px;
+  background: var(--cursor-overview);
+  pointer-events: none;
+  z-index: 5;
+}
 
 /* Quick Open (Cmd+P) */
 .qo-backdrop {
