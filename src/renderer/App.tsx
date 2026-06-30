@@ -22,7 +22,7 @@ export function App() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
   const [sidebarWidth, setSidebarWidth] = useState(300)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -113,6 +113,9 @@ export function App() {
       setRootName(res.root.split('/').filter(Boolean).pop() ?? res.root)
       const t = await window.editorApi.tree(res.root, 1)
       setEntries(t.entries)
+      // Reveal the Explorer when a folder opens (sidebar starts collapsed).
+      setSidebarView('explorer')
+      setSidebarCollapsed(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }

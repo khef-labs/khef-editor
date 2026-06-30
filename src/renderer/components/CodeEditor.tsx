@@ -40,6 +40,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
+        EditorView.lineWrapping,
         history(),
         foldGutter(),
         indentOnInput(),
