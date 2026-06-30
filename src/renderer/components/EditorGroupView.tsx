@@ -13,11 +13,14 @@ interface EditorGroupViewProps {
   onCloseTab: (path: string) => void
   onChangeContent: (path: string, content: string) => void
   onSave: (path: string) => void
+  onOpenFolder?: () => void
+  onOpenSettings?: () => void
 }
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onSave,
+  onOpenFolder, onOpenSettings,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
 
@@ -46,12 +49,40 @@ export function EditorGroupView({
             onSave={() => onSave(activeTab.path)}
           />
         ) : (
-          <div class="editor-empty">
-            <p class="big-logo">⌘</p>
-            <p class="hint">Open a file from the Explorer to start editing.</p>
-          </div>
+          <WelcomePane onOpenFolder={onOpenFolder} onOpenSettings={onOpenSettings} />
         )}
       </div>
     </section>
+  )
+}
+
+function WelcomePane({ onOpenFolder, onOpenSettings }: { onOpenFolder?: () => void; onOpenSettings?: () => void }) {
+  // Only actions that make sense before a folder is open. "Open File" has no command
+  // yet, so it's shown disabled; Settings opens the panel.
+  const rows: { label: string; keys: string[]; onClick?: () => void }[] = [
+    { label: 'Open Folder', keys: ['⌘', 'O'], onClick: onOpenFolder },
+    { label: 'Open File', keys: [] },
+    { label: 'Settings', keys: ['⌘', ','], onClick: onOpenSettings },
+  ]
+  return (
+    <div class="editor-empty" data-testid="welcome-pane">
+      <div class="welcome-watermark" aria-hidden="true">K</div>
+      <ul class="welcome-shortcuts">
+        {rows.map((r) => (
+          <li key={r.label}>
+            <button
+              class="welcome-row"
+              disabled={!r.onClick}
+              onClick={r.onClick}
+            >
+              <span class="welcome-label">{r.label}</span>
+              <span class="welcome-keys">
+                {r.keys.map((k, i) => <kbd key={i} class="welcome-key">{k}</kbd>)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

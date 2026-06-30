@@ -394,6 +394,8 @@ export function App() {
               onChangeContent={changeContent}
               onSave={(leafId, path) => void saveTab(leafId, path)}
               onResize={resizeSplit}
+              onOpenFolder={() => void openFolder()}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
         )}
