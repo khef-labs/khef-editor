@@ -26,6 +26,7 @@ export function App() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm'>('explorer')
   const [scmRefresh, setScmRefresh] = useState(0)
+  const [recentFolders, setRecentFolders] = useState<string[]>([])
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
@@ -49,6 +50,7 @@ export function App() {
         setSidebarWidth(Math.max(180, Math.min(s.sidebarWidth, 700)))
       }
     }).catch(() => { applyTheme(themeById('dark-plus')) })
+    void window.editorApi.recentFolders().then(setRecentFolders)
   }, [])
 
   // Sidebar resize drag. Below COLLAPSE_AT the sidebar snaps closed (VS Code-style);
@@ -116,10 +118,11 @@ export function App() {
     void window.editorApi.setSettings({ theme: t.id })
   }, [])
 
-  const openFolder = useCallback(async () => {
+  // Open a folder. With no path, shows the picker; with a path (recent folder), opens it.
+  const openFolder = useCallback(async (dirPath?: string) => {
     setError(null)
     try {
-      const res = await window.editorApi.openWorkspace()
+      const res = await window.editorApi.openWorkspace(dirPath ?? null)
       if (!res) return
       setRoot(res.root)
       setRootName(res.root.split('/').filter(Boolean).pop() ?? res.root)
@@ -128,6 +131,7 @@ export function App() {
       // Reveal the Explorer when a folder opens (sidebar starts collapsed).
       setSidebarView('explorer')
       setSidebarCollapsed(false)
+      void window.editorApi.recentFolders().then(setRecentFolders)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -385,7 +389,9 @@ export function App() {
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
     const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
-    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview() }
+    const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
+    const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => { void window.editorApi.clearRecentFolders().then(setRecentFolders) })
+    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
   }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
@@ -541,6 +547,8 @@ export function App() {
               onOpenFolder={() => void openFolder()}
               onOpenFile={() => void openFileViaDialog()}
               onOpenSettings={() => setSettingsOpen(true)}
+              recentFolders={recentFolders}
+              onOpenRecent={(dir) => void openFolder(dir)}
             />
           </div>
         )}

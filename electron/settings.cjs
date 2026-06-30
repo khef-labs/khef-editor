@@ -11,7 +11,10 @@ const path = require('node:path')
 const DEFAULTS = {
   theme: 'dark-plus',
   sidebarWidth: 300,
+  recentFolders: [], // most-recent-first list of opened workspace roots
 }
+
+const MAX_RECENT = 12
 
 let cache = null
 let filePath = null
@@ -41,6 +44,24 @@ async function save(patch) {
   return cache
 }
 
+async function getRecentFolders() {
+  const s = await load()
+  const list = Array.isArray(s.recentFolders) ? s.recentFolders : []
+  return list.filter((p) => typeof p === 'string')
+}
+
+// Record a folder as most-recently-opened. Dedupes, moves to front, caps the list.
+async function addRecentFolder(dir) {
+  if (typeof dir !== 'string' || !dir) return getRecentFolders()
+  const list = await getRecentFolders()
+  const next = [dir, ...list.filter((p) => p !== dir)].slice(0, MAX_RECENT)
+  await save({ recentFolders: next })
+  return next
+}
+
+let onRecentChange = null
+function setRecentChangeHandler(fn) { onRecentChange = fn }
+
 function registerSettingsIpc() {
   ipcMain.handle('settings:get', async () => load())
   ipcMain.handle('settings:set', async (_event, patch) => {
@@ -52,6 +73,12 @@ function registerSettingsIpc() {
     }
     return save(allowed)
   })
+  ipcMain.handle('recent:get', async () => getRecentFolders())
+  ipcMain.handle('recent:clear', async () => {
+    await save({ recentFolders: [] })
+    if (onRecentChange) onRecentChange()
+    return []
+  })
 }
 
-module.exports = { registerSettingsIpc, DEFAULTS }
+module.exports = { registerSettingsIpc, DEFAULTS, getRecentFolders, addRecentFolder, setRecentChangeHandler }

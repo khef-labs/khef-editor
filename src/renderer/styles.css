@@ -870,3 +870,19 @@ html, body, #app {
 .diff-del { background: rgba(241, 76, 76, 0.16); }
 .diff-mod { background: rgba(226, 192, 141, 0.14); }
 .diff-empty { background: rgba(127, 127, 127, 0.06); }
+
+/* Welcome screen: Recent folders */
+.welcome-recent { position: relative; margin-top: 22px; min-width: 280px; }
+.welcome-recent-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-dim); margin-bottom: 4px; padding: 0 8px;
+}
+.welcome-recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.welcome-recent-row {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  background: none; border: none; border-radius: 5px; padding: 4px 8px;
+  cursor: pointer; text-align: left; font-family: var(--font-ui); font-size: 13px;
+}
+.welcome-recent-row:hover { background: var(--row-hover); }
+.welcome-recent-name { flex: 0 0 auto; color: var(--bg-statusbar); }
+.welcome-recent-dir { flex: 1 1 0; color: var(--fg-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

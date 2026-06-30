@@ -142,7 +142,7 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent'
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
@@ -158,8 +158,10 @@ export interface EditorApi {
   deletePath(targetPath: string): Promise<DeleteResult>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  recentFolders(): Promise<string[]>
+  clearRecentFolders(): Promise<string[]>
   git: GitApi
-  onMenu(channel: MenuChannel, handler: () => void): () => void
+  onMenu(channel: MenuChannel, handler: (...args: string[]) => void): () => void
 }
 
 declare global {

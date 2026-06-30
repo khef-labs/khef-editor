@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:preview-side'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
@@ -39,12 +39,17 @@ contextBridge.exposeInMainWorld('editorApi', {
     fileDiff: (args) => ipcRenderer.invoke('git:fileDiff', args),
   },
 
-  // Menu events (main → renderer). Returns an unsubscribe function.
+  // Recent folders
+  recentFolders: () => ipcRenderer.invoke('recent:get'),
+  clearRecentFolders: () => ipcRenderer.invoke('recent:clear'),
+
+  // Menu events (main → renderer). Returns an unsubscribe function. The handler receives
+  // any extra arg the main process sent (e.g. the path for menu:open-recent).
   onMenu: (channel, handler) => {
     if (!MENU_CHANNELS.has(channel)) {
       throw new Error(`Unknown menu channel: ${channel}`)
     }
-    const listener = () => handler()
+    const listener = (_event, ...args) => handler(...args)
     ipcRenderer.on(channel, listener)
     return () => ipcRenderer.removeListener(channel, listener)
   },

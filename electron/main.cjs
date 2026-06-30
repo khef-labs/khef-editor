@@ -7,8 +7,9 @@
 
 const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
-const { registerFsIpc } = require('./fs-ipc.cjs')
-const { registerSettingsIpc } = require('./settings.cjs')
+const os = require('node:os')
+const { registerFsIpc, setWorkspaceOpenedHandler } = require('./fs-ipc.cjs')
+const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
 
@@ -114,7 +115,18 @@ function installCsp() {
   })
 }
 
-function buildMenu() {
+function buildMenu(recentFolders = []) {
+  const recentSubmenu = recentFolders.length
+    ? [
+        ...recentFolders.map((dir) => ({
+          label: dir.replace(os.homedir(), '~'),
+          click: () => mainWindow?.webContents.send('menu:open-recent', dir),
+        })),
+        { type: 'separator' },
+        { label: 'Clear Recently Opened', click: () => mainWindow?.webContents.send('menu:clear-recent') },
+      ]
+    : [{ label: 'No Recent Folders', enabled: false }]
+
   const template = [
     {
       label: 'Khef Editor',
@@ -146,6 +158,7 @@ function buildMenu() {
           accelerator: 'Shift+CmdOrCtrl+O',
           click: () => mainWindow?.webContents.send('menu:open-folder'),
         },
+        { label: 'Open Recent', submenu: recentSubmenu },
         {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
@@ -209,6 +222,11 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+// Rebuild the menu with the current Open Recent list.
+async function refreshMenu() {
+  try { buildMenu(await getRecentFolders()) } catch { buildMenu([]) }
+}
+
 app.whenReady().then(() => {
   installNavigationGuards()
   installCsp()
@@ -216,7 +234,10 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerSearchIpc()
   registerGitIpc()
-  buildMenu()
+  // Rebuild the Open Recent submenu whenever a folder opens or the list is cleared.
+  setWorkspaceOpenedHandler(() => void refreshMenu())
+  setRecentChangeHandler(() => void refreshMenu())
+  void refreshMenu()
   createWindow()
 
   app.on('activate', () => {

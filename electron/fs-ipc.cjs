@@ -9,6 +9,11 @@ const { ipcMain, dialog, BrowserWindow } = require('electron')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const ws = require('./workspace.cjs')
+const { addRecentFolder } = require('./settings.cjs')
+
+// Set by main.cjs so opening a folder can rebuild the File → Open Recent menu.
+let onWorkspaceOpened = null
+function setWorkspaceOpenedHandler(fn) { onWorkspaceOpened = fn }
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB text cap (design §7.3 #6)
 const MAX_TREE_ENTRIES = 20000 // bound a pathological folder from freezing the UI
@@ -110,6 +115,9 @@ function registerFsIpc() {
     }
     assertString(dir, 'path')
     const root = await ws.setWorkspaceRoot(dir)
+    // Record the realpath'd root as recently-opened and refresh the Open Recent menu.
+    await addRecentFolder(root)
+    if (onWorkspaceOpened) onWorkspaceOpened()
     return { root }
   })
 
@@ -218,4 +226,4 @@ function registerFsIpc() {
   })
 }
 
-module.exports = { registerFsIpc, MAX_FILE_SIZE, IGNORED_DIRS }
+module.exports = { registerFsIpc, setWorkspaceOpenedHandler, MAX_FILE_SIZE, IGNORED_DIRS }

@@ -18,12 +18,14 @@ interface EditorGroupViewProps {
   onOpenFolder?: () => void
   onOpenFile?: () => void
   onOpenSettings?: () => void
+  recentFolders?: string[]
+  onOpenRecent?: (dir: string) => void
 }
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onSave,
-  onOpenFolder, onOpenFile, onOpenSettings,
+  onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
 
@@ -63,31 +65,37 @@ export function EditorGroupView({
             />
           )
         ) : (
-          <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} />
+          <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} recentFolders={recentFolders} onOpenRecent={onOpenRecent} />
         )}
       </div>
     </section>
   )
 }
 
-function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings }: { onOpenFolder?: () => void; onOpenFile?: () => void; onOpenSettings?: () => void }) {
+function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent }: {
+  onOpenFolder?: () => void; onOpenFile?: () => void; onOpenSettings?: () => void
+  recentFolders?: string[]; onOpenRecent?: (dir: string) => void
+}) {
   // Actions that make sense before a folder is open.
   const rows: { label: string; keys: string[]; onClick?: () => void }[] = [
     { label: 'Open File', keys: ['⌘', 'O'], onClick: onOpenFile },
     { label: 'Open Folder', keys: ['⇧', '⌘', 'O'], onClick: onOpenFolder },
     { label: 'Settings', keys: ['⌘', ','], onClick: onOpenSettings },
   ]
+  const recents = (recentFolders ?? []).slice(0, 8)
+  const home = '/Users/'
+  const pretty = (p: string) => {
+    const name = p.split('/').filter(Boolean).pop() ?? p
+    const dir = p.startsWith(home) ? '~' + p.slice(p.indexOf('/', 6)) : p
+    return { name, dir: dir.slice(0, dir.length - name.length - 1) }
+  }
   return (
     <div class="editor-empty" data-testid="welcome-pane">
       <div class="welcome-watermark" aria-hidden="true">K</div>
       <ul class="welcome-shortcuts">
         {rows.map((r) => (
           <li key={r.label}>
-            <button
-              class="welcome-row"
-              disabled={!r.onClick}
-              onClick={r.onClick}
-            >
+            <button class="welcome-row" disabled={!r.onClick} onClick={r.onClick}>
               <span class="welcome-label">{r.label}</span>
               <span class="welcome-keys">
                 {r.keys.map((k, i) => <kbd key={i} class="welcome-key">{k}</kbd>)}
@@ -96,6 +104,24 @@ function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings }: { onOpenFolde
           </li>
         ))}
       </ul>
+      {recents.length > 0 && (
+        <div class="welcome-recent">
+          <div class="welcome-recent-title">Recent</div>
+          <ul class="welcome-recent-list">
+            {recents.map((p) => {
+              const { name, dir } = pretty(p)
+              return (
+                <li key={p}>
+                  <button class="welcome-recent-row" title={p} onClick={() => onOpenRecent?.(p)}>
+                    <span class="welcome-recent-name">{name}</span>
+                    <span class="welcome-recent-dir">{dir}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
