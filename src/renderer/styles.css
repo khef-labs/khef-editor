@@ -5,7 +5,9 @@
   --bg-activity: #333333;   /* activity bar */
   --bg-tab-inactive: #2d2d2d;
   --bg-tab-active: #1e1e1e;
-  --bg-statusbar: #007acc;  /* VS Code blue status bar */
+  --bg-statusbar: #007acc;  /* accent: dividers, focused tab, search focus */
+  --statusbar-bg: #181818;  /* muted status bar (folder-open state, like VS Code) */
+  --statusbar-fg: #cccccc;
   --border: #1b1b1b;
   --border-soft: #2b2b2b;
   --fg: #cccccc;
@@ -348,12 +350,15 @@ html, body, #app {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--bg-statusbar);
-  color: #fff;
-  font-size: 12px;
-  padding: 0 12px;
+  background: var(--statusbar-bg);
+  color: var(--statusbar-fg);
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px;
+  padding: 0 10px;
+  user-select: none;
 }
-.status-left, .status-right { line-height: 22px; }
+.status-left, .status-right { line-height: 21px; }
+.status-right { color: var(--fg-dim); }
 
 /* CodeMirror tweaks to sit flush in the pane */
 .cm-editor { height: 100%; }

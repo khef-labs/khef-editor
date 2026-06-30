@@ -352,7 +352,6 @@ export function App() {
             </>
           ) : (
             <div class="sidebar-empty">
-              <p class="hint">You have not yet opened a folder.</p>
               <button class="open-btn" onClick={() => void openFolder()}>Open Folder</button>
             </div>
           )}
