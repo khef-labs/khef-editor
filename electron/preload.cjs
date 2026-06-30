@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
   listFiles: () => ipcRenderer.invoke('fs:listFiles'),
   search: (query, options) => ipcRenderer.invoke('fs:search', query, options ?? {}),
+  replaceAll: (query, replacement, options) => ipcRenderer.invoke('fs:replaceAll', query, replacement, options ?? {}),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:delete', targetPath),
 
   // Settings

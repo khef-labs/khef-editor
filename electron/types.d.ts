@@ -74,6 +74,11 @@ export interface SearchResult {
   truncated: boolean
 }
 
+export interface ReplaceResult {
+  filesChanged: number
+  replacements: number
+}
+
 export interface DeleteResult {
   path: string
   deleted: boolean
@@ -81,6 +86,7 @@ export interface DeleteResult {
 
 export interface AppSettings {
   theme: string
+  sidebarWidth: number
 }
 
 export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split'
@@ -93,6 +99,7 @@ export interface EditorApi {
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>
   search(query: string, options?: SearchOptions): Promise<SearchResult>
+  replaceAll(query: string, replacement: string, options?: SearchOptions): Promise<ReplaceResult>
   deletePath(targetPath: string): Promise<DeleteResult>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>

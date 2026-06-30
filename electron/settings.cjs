@@ -10,6 +10,7 @@ const path = require('node:path')
 
 const DEFAULTS = {
   theme: 'dark-plus',
+  sidebarWidth: 300,
 }
 
 let cache = null

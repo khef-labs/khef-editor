@@ -33,12 +33,13 @@ html, body, #app {
 /* Grid: [activitybar | sidebar | editor] over a full-width statusbar */
 .shell {
   display: grid;
-  grid-template-columns: 48px 240px 1fr;
+  grid-template-columns: 48px var(--sidebar-w, 300px) 1fr;
   grid-template-rows: 1fr 22px;
   grid-template-areas:
     'activity sidebar editor'
     'status   status  status';
   height: 100vh;
+  position: relative;
 }
 
 /* Activity bar */
@@ -78,7 +79,38 @@ html, body, #app {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 }
+/* Drag handle to resize the sidebar (VS Code-style). A wide INVISIBLE hit area with a
+   thin 1px line drawn via ::before — the line shows a subtle separator at rest and
+   brightens to the accent on hover/drag. Positioned relative to the SHELL at the
+   sidebar's right boundary so it stays grabbable even when the sidebar is collapsed. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  height: calc(100% - 22px); /* exclude the status bar row */
+  left: calc(48px + var(--sidebar-w, 300px) - 4px);
+  width: 8px;
+  cursor: col-resize;
+  z-index: 20;
+  background: none;
+}
+.sidebar-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  background: var(--border-soft);
+  transition: background 80ms ease, width 80ms ease;
+}
+.sidebar-resizer:hover::before,
+.sidebar-resizer.dragging::before {
+  background: var(--bg-statusbar);
+  width: 2px;
+}
+.sidebar-resizer.collapsed { left: calc(48px - 2px); }
 /* Each sidebar view (Explorer / Search) fills the sidebar and scrolls on its own.
    Hidden views stay mounted so their state (e.g. the search query/results) persists. */
 .sidebar-view {
@@ -390,34 +422,85 @@ html, body, #app {
 
 /* Search panel */
 .search-panel { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.search-input-row { padding: 4px 10px 8px; }
-.search-input {
-  width: 100%;
+
+/* Header toolbar (SEARCH + action icons) */
+.search-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+.search-title { padding: 10px 0 6px 16px; }
+.search-toolbar-actions { display: flex; gap: 1px; }
+.search-tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: none; border: none; border-radius: 5px;
+  color: var(--fg); cursor: pointer;
+}
+.search-tool:hover { background: var(--row-hover); color: var(--fg-bright); }
+
+/* Search + Replace fields with the collapse chevron on the left */
+.search-body { display: flex; align-items: stretch; padding: 2px 10px 6px 2px; gap: 4px; }
+.search-replace-toggle {
+  flex: 0 0 auto;
+  width: 22px;
+  align-self: stretch;
+  background: none; border: none;
+  color: var(--fg); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.search-replace-toggle:hover { color: var(--fg-bright); background: var(--row-hover); border-radius: 4px; }
+.search-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+
+.search-field {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
   background: #3c3c3c;
-  border: 1px solid transparent;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding-right: 5px;
+}
+.search-field:focus-within { border-color: var(--bg-statusbar); }
+.search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
   color: var(--fg);
-  font-size: 13px;
-  padding: 5px 8px;
-  border-radius: 3px;
+  font-size: 14px;
+  padding: 7px 10px;
   outline: none;
   font-family: var(--font-ui);
 }
-.search-input:focus { border-color: var(--bg-statusbar); }
-.search-opts { display: flex; gap: 2px; margin-top: 6px; }
-.search-opt {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px; height: 24px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--fg-dim);
-  cursor: pointer;
+.field-toggles { display: flex; gap: 2px; flex: 0 0 auto; }
+.field-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: none; border: 1px solid transparent; border-radius: 5px;
+  color: var(--fg); cursor: pointer;
 }
-.search-opt:hover { background: var(--row-hover); color: var(--fg); }
-.search-opt.on { background: var(--row-active); color: var(--fg-bright); border-color: var(--bg-statusbar); }
-.search-summary { padding: 0 12px 6px; color: var(--fg-dim); font-size: 11px; }
+.field-toggle:hover { background: var(--row-hover); color: var(--fg-bright); }
+.field-toggle.on { background: var(--row-active); color: var(--fg-bright); border-color: var(--bg-statusbar); }
+
+.search-replace-row { display: flex; align-items: stretch; gap: 4px; }
+.search-replace-row .search-field { flex: 1; }
+.replace-all-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  min-height: 34px;
+  background: none; border: 1px solid transparent; border-radius: 5px;
+  color: var(--fg); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.replace-all-btn:hover:not(:disabled) { background: var(--row-hover); color: var(--fg-bright); }
+.replace-all-btn:disabled { opacity: 0.4; cursor: default; }
+
+.search-summary { padding: 0 12px 6px 22px; color: var(--fg-dim); font-size: 11px; }
+.search-notice { color: var(--fg); }
+.match-old { background: rgba(255, 80, 80, 0.22); text-decoration: line-through; border-radius: 2px; }
+.match-new { background: rgba(80, 200, 120, 0.28); border-radius: 2px; }
 .search-results { flex: 1; overflow-y: auto; min-height: 0; }
 .search-file { font-size: 13px; }
 .search-file-header {

@@ -21,6 +21,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
+  const [sidebarWidth, setSidebarWidth] = useState(300)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -38,8 +40,62 @@ export function App() {
       const t = themeById(s.theme)
       setThemeId(t.id)
       applyTheme(t)
+      if (typeof s.sidebarWidth === 'number' && s.sidebarWidth > 0) {
+        setSidebarWidth(Math.max(180, Math.min(s.sidebarWidth, 700)))
+      }
     }).catch(() => { applyTheme(themeById('dark-plus')) })
   }, [])
+
+  // Sidebar resize drag. Below COLLAPSE_AT the sidebar snaps closed (VS Code-style);
+  // it can't be shrunk to a sliver — it's either >= MIN_W or hidden.
+  const MIN_W = 170
+  const COLLAPSE_AT = 120
+  const MAX_W = 700
+  const startSidebarDrag = useCallback((e: PointerEvent) => {
+    e.preventDefault()
+    const handle = e.currentTarget as HTMLElement
+    handle.setPointerCapture(e.pointerId)
+    handle.classList.add('dragging')
+    const startX = e.clientX
+    // When collapsed, the visible width is 0, so grow from there as the user drags right.
+    const startW = sidebarCollapsed ? 0 : sidebarWidth
+    let collapsed = sidebarCollapsed
+    let width = sidebarCollapsed ? sidebarWidth : sidebarWidth
+    const onMove = (ev: PointerEvent) => {
+      const raw = startW + (ev.clientX - startX)
+      if (raw < COLLAPSE_AT) {
+        collapsed = true
+        setSidebarCollapsed(true)
+      } else {
+        collapsed = false
+        width = Math.max(MIN_W, Math.min(MAX_W, raw))
+        setSidebarCollapsed(false)
+        setSidebarWidth(width)
+      }
+    }
+    const onUp = (ev: PointerEvent) => {
+      handle.releasePointerCapture(ev.pointerId)
+      handle.classList.remove('dragging')
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', onUp)
+      // Persist width only when not collapsed; keep last width to restore on reopen.
+      if (!collapsed) void window.editorApi.setSettings({ sidebarWidth: Math.round(width) })
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', onUp)
+  }, [sidebarWidth])
+
+  // Clicking an activity-bar view icon: open that view, or toggle collapse if it's the
+  // already-active view (VS Code behavior).
+  const selectView = useCallback((view: 'explorer' | 'search') => {
+    setSettingsOpen(false)
+    if (!sidebarCollapsed && sidebarView === view) {
+      setSidebarCollapsed(true)
+    } else {
+      setSidebarCollapsed(false)
+      setSidebarView(view)
+    }
+  }, [sidebarCollapsed, sidebarView])
 
   const selectTheme = useCallback((id: string) => {
     const t = themeById(id)
@@ -257,19 +313,19 @@ export function App() {
   const paneCount = leaves(tree).length
 
   return (
-    <div class="shell">
+    <div class="shell" style={{ '--sidebar-w': sidebarCollapsed ? '0px' : `${sidebarWidth}px` } as Record<string, string>}>
       <nav class="activitybar">
         <button
-          class={`act-btn${sidebarView === 'explorer' && !settingsOpen ? ' active' : ''}`}
+          class={`act-btn${sidebarView === 'explorer' && !settingsOpen && !sidebarCollapsed ? ' active' : ''}`}
           title="Explorer"
-          onClick={() => { setSidebarView('explorer'); setSettingsOpen(false) }}
+          onClick={() => selectView('explorer')}
         >
           <Files size={22} />
         </button>
         <button
-          class={`act-btn${sidebarView === 'search' && !settingsOpen ? ' active' : ''}`}
+          class={`act-btn${sidebarView === 'search' && !settingsOpen && !sidebarCollapsed ? ' active' : ''}`}
           title="Search"
-          onClick={() => { setSidebarView('search'); setSettingsOpen(false) }}
+          onClick={() => selectView('search')}
         >
           <SearchIcon size={22} />
         </button>
@@ -312,6 +368,12 @@ export function App() {
           )}
         </div>
       </aside>
+
+      <div
+        class={`sidebar-resizer${sidebarCollapsed ? ' collapsed' : ''}`}
+        onPointerDown={startSidebarDrag}
+        data-testid="sidebar-resizer"
+      />
 
       <main class="editor-area">
         {settingsOpen ? (
