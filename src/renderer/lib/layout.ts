@@ -12,10 +12,12 @@ export interface OpenTab {
   // through the per-file loose-write gate, not the workspace-confined write.
   loose?: boolean
   // 'editor' (default) shows the CodeMirror editor; 'preview' renders the source file as
-  // Markdown/Mermaid. A preview tab uses a synthetic path (`preview://<sourcePath>`) so it
-  // is a distinct tab from the editor, and carries `sourcePath` to find the live content.
-  kind?: 'editor' | 'preview'
+  // Markdown/Mermaid; 'diff' shows a read-only side-by-side git diff. preview/diff tabs use
+  // a synthetic path so they're distinct from the editor tab.
+  kind?: 'editor' | 'preview' | 'diff'
   sourcePath?: string
+  // For diff tabs: the diff spec (mode/file/hash).
+  diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
 }
 
 export interface LeafNode {

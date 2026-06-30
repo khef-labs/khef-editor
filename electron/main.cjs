@@ -10,6 +10,7 @@ const path = require('node:path')
 const { registerFsIpc } = require('./fs-ipc.cjs')
 const { registerSettingsIpc } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
+const { registerGitIpc } = require('./git.cjs')
 
 const isDev = process.env.KHEF_EDITOR_DEV === '1'
 const DEV_URL = 'http://localhost:5273'
@@ -214,6 +215,7 @@ app.whenReady().then(() => {
   registerFsIpc()
   registerSettingsIpc()
   registerSearchIpc()
+  registerGitIpc()
   buildMenu()
   createWindow()
 

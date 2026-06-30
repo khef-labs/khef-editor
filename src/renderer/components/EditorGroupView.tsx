@@ -1,6 +1,7 @@
 import { TabBar } from './TabBar'
 import { CodeEditor } from './CodeEditor'
 import { PreviewPane } from './PreviewPane'
+import { DiffView } from './DiffView'
 import type { EditorGroup } from '../lib/editorGroups'
 import { themeById } from '../lib/themes'
 
@@ -48,6 +49,8 @@ export function EditorGroupView({
               dark={themeId !== 'light-plus'}
               idPrefix={activeTab.path.replace(/[^a-zA-Z0-9]/g, '-')}
             />
+          ) : activeTab.kind === 'diff' && activeTab.diff ? (
+            <DiffView spec={activeTab.diff} />
           ) : (
             <CodeEditor
               path={activeTab.path}

@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('editorApi', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
+  // Git (read-only)
+  git: {
+    info: () => ipcRenderer.invoke('git:info'),
+    status: () => ipcRenderer.invoke('git:status'),
+    log: (skip, limit) => ipcRenderer.invoke('git:log', skip ?? 0, limit ?? 50),
+    commitFiles: (hash) => ipcRenderer.invoke('git:commitFiles', hash),
+    fileDiff: (args) => ipcRenderer.invoke('git:fileDiff', args),
+  },
+
   // Menu events (main → renderer). Returns an unsubscribe function.
   onMenu: (channel, handler) => {
     if (!MENU_CHANNELS.has(channel)) {

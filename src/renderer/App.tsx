@@ -7,6 +7,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
+import { SourceControlPanel } from './components/SourceControlPanel'
 import { selectAllInActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { isPreviewable } from './lib/preview'
@@ -23,7 +24,8 @@ export function App() {
   const [activeLeafId, setActiveLeafId] = useState<string>(() => '')
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
-  const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
+  const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm'>('explorer')
+  const [scmRefresh, setScmRefresh] = useState(0)
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
@@ -90,13 +92,14 @@ export function App() {
 
   // Clicking an activity-bar view icon: open that view, or toggle collapse if it's the
   // already-active view (VS Code behavior).
-  const selectView = useCallback((view: 'explorer' | 'search') => {
+  const selectView = useCallback((view: 'explorer' | 'search' | 'scm') => {
     setSettingsOpen(false)
     if (!sidebarCollapsed && sidebarView === view) {
       setSidebarCollapsed(true)
     } else {
       setSidebarCollapsed(false)
       setSidebarView(view)
+      if (view === 'scm') setScmRefresh((n) => n + 1) // refresh git state on open
     }
   }, [sidebarCollapsed, sidebarView])
 
@@ -187,6 +190,21 @@ export function App() {
     void openPath(entry.path, entry.name)
   }, [openPath])
 
+  // Open a read-only git diff as a tab in the focused leaf (or focus it if already open).
+  const openDiff = useCallback((spec: { mode: 'working' | 'commit'; file: string; hash?: string }, title: string) => {
+    const diffPath = `diff://${spec.mode}/${spec.hash ?? 'wt'}/${spec.file}`
+    const leafId = activeLeafIdRef.current
+    const leaf = findLeaf(treeRef.current, leafId)
+    if (leaf?.tabs.some((t) => t.path === diffPath)) {
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: diffPath })))
+      return
+    }
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      const tab: OpenTab = { path: diffPath, name: title, content: '', savedContent: '', kind: 'diff', diff: spec }
+      return { ...l, tabs: [...l.tabs, tab], activePath: diffPath }
+    }))
+  }, [])
+
   const openMatch = useCallback((filePath: string, fileName: string, line: number) => {
     void openPath(filePath, fileName).then(() => {
       jumpTokenRef.current += 1
@@ -225,6 +243,7 @@ export function App() {
       setTree((prev) => mapLeaves(prev, (l) => ({
         ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, savedContent: t.content } : t)),
       })))
+      setScmRefresh((n) => n + 1) // working-tree changed → refresh source control
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -432,7 +451,13 @@ export function App() {
         >
           <SearchIcon size={22} />
         </button>
-        <button class="act-btn" title="Source Control (coming)"><GitBranch size={22} /></button>
+        <button
+          class={`act-btn${sidebarView === 'scm' && !settingsOpen && !sidebarCollapsed ? ' active' : ''}`}
+          title="Source Control"
+          onClick={() => selectView('scm')}
+        >
+          <GitBranch size={22} />
+        </button>
         <span class="act-spacer" />
         <button
           class={`act-btn${settingsOpen ? ' active' : ''}`}
@@ -472,6 +497,16 @@ export function App() {
             <>
               <div class="sidebar-header">Search</div>
               <div class="sidebar-empty"><p class="hint">Open a folder to search.</p></div>
+            </>
+          )}
+        </div>
+        <div class={`sidebar-view${sidebarView === 'scm' ? '' : ' hidden'}`}>
+          {root ? (
+            <SourceControlPanel refreshToken={scmRefresh} onOpenDiff={openDiff} />
+          ) : (
+            <>
+              <div class="sidebar-header">Source Control</div>
+              <div class="sidebar-empty"><p class="hint">Open a folder to see source control.</p></div>
             </>
           )}
         </div>

@@ -8,8 +8,9 @@ export interface OpenTab {
   content: string
   savedContent: string
   loose?: boolean
-  kind?: 'editor' | 'preview'
+  kind?: 'editor' | 'preview' | 'diff'
   sourcePath?: string
+  diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
 }
 
 export interface EditorGroup {

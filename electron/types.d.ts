@@ -90,6 +90,58 @@ export interface AppSettings {
   sidebarWidth: number
 }
 
+export interface GitInfo {
+  isRepo: boolean
+  branch: string | null
+}
+
+export interface GitChange {
+  path: string
+  status: string // M | A | D | R | U
+  raw?: string
+}
+
+export interface GitStatusResult {
+  files: GitChange[]
+}
+
+export interface GitCommit {
+  hash: string
+  short: string
+  author: string
+  date: string
+  subject: string
+}
+
+export interface GitLogResult {
+  commits: GitCommit[]
+  hasMore: boolean
+}
+
+export interface GitCommitFile {
+  path: string
+  status: string
+}
+
+export interface GitCommitFilesResult {
+  files: GitCommitFile[]
+}
+
+export interface GitFileDiff {
+  oldText: string
+  newText: string
+  oldLabel: string
+  newLabel: string
+}
+
+export interface GitApi {
+  info(): Promise<GitInfo>
+  status(): Promise<GitStatusResult>
+  log(skip?: number, limit?: number): Promise<GitLogResult>
+  commitFiles(hash: string): Promise<GitCommitFilesResult>
+  fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
+}
+
 export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side'
 
 export interface EditorApi {
@@ -106,6 +158,7 @@ export interface EditorApi {
   deletePath(targetPath: string): Promise<DeleteResult>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  git: GitApi
   onMenu(channel: MenuChannel, handler: () => void): () => void
 }
 
