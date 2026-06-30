@@ -7,6 +7,9 @@ export interface OpenTab {
   name: string
   content: string
   savedContent: string
+  loose?: boolean
+  kind?: 'editor' | 'preview'
+  sourcePath?: string
 }
 
 export interface EditorGroup {

@@ -174,6 +174,11 @@ function buildMenu() {
           click: () => mainWindow?.webContents.send('menu:quick-open'),
         },
         {
+          label: 'Open Preview to the Side',
+          accelerator: 'Shift+CmdOrCtrl+V',
+          click: () => mainWindow?.webContents.send('menu:preview-side'),
+        },
+        {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
           click: () => mainWindow?.webContents.send('menu:toggle-sidebar'),

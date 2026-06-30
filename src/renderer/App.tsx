@@ -8,8 +8,9 @@ import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { themeById, applyTheme } from './lib/themes'
+import { isPreviewable } from './lib/preview'
 import {
-  makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, removeLeaf, soloLeaf, setSplitSizes,
+  makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes,
   type LayoutNode, type OpenTab,
 } from './lib/layout'
 
@@ -201,12 +202,18 @@ export function App() {
     setTree((prev) => updateLeaf(prev, leafId, (l) => ({
       ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, content } : t)),
     })))
+    // Live-update any preview tab sourced from this file, across all panes. Keep
+    // savedContent in sync so a preview never renders as dirty.
+    setTree((prev) => mapLeaves(prev, (l) => ({
+      ...l, tabs: l.tabs.map((t) => (t.kind === 'preview' && t.sourcePath === path ? { ...t, content, savedContent: content } : t)),
+    })))
   }, [])
 
   const saveTab = useCallback(async (leafId: string, path: string) => {
     const leaf = findLeaf(tree, leafId)
     const tab = leaf?.tabs.find((t) => t.path === path)
     if (!tab) return
+    if (tab.kind === 'preview') return // previews are read-only
     try {
       if (tab.loose) {
         await window.editorApi.writeLooseFile(tab.path, tab.content)
@@ -276,6 +283,38 @@ export function App() {
     splitById(activeLeafIdRef.current, orientation)
   }, [splitById])
 
+  // Open a rendered Markdown/Mermaid preview of the focused file in a split to the side.
+  // If a preview of this file is already open, just focus it.
+  const openPreviewToSide = useCallback(() => {
+    const leafId = activeLeafIdRef.current
+    const leaf = findLeaf(treeRef.current, leafId)
+    const src = leaf?.tabs.find((t) => t.path === leaf.activePath)
+    if (!src || src.kind === 'preview' || !isPreviewable(src.name)) return
+    const previewPath = `preview://${src.path}`
+    // Already open somewhere? Focus that pane/tab.
+    for (const l of leaves(treeRef.current)) {
+      if (l.tabs.some((t) => t.path === previewPath)) {
+        setActiveLeafId(l.id)
+        setTree((prev) => updateLeaf(prev, l.id, (x) => ({ ...x, activePath: previewPath })))
+        return
+      }
+    }
+    const previewTab: OpenTab = {
+      path: previewPath,
+      name: `Preview ${src.name}`,
+      content: src.content,
+      savedContent: src.content,
+      kind: 'preview',
+      sourcePath: src.path,
+    }
+    setTree((prev) => {
+      const res = splitLeafWithTab(prev, leafId, 'row', previewTab)
+      if (!res) return prev
+      setActiveLeafId(res.newLeafId)
+      return res.tree
+    })
+  }, [])
+
   const closeFocusedPane = useCallback(() => {
     setTree((prev) => {
       const res = removeLeaf(prev, activeLeafIdRef.current)
@@ -313,8 +352,9 @@ export function App() {
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
     const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
-    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar() }
-  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar])
+    const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
+    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview() }
+  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)

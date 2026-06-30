@@ -11,6 +11,11 @@ export interface OpenTab {
   // True for files opened via "Open File" outside the workspace root. These save back
   // through the per-file loose-write gate, not the workspace-confined write.
   loose?: boolean
+  // 'editor' (default) shows the CodeMirror editor; 'preview' renders the source file as
+  // Markdown/Mermaid. A preview tab uses a synthetic path (`preview://<sourcePath>`) so it
+  // is a distinct tab from the editor, and carries `sourcePath` to find the live content.
+  kind?: 'editor' | 'preview'
+  sourcePath?: string
 }
 
 export interface LeafNode {
@@ -108,6 +113,26 @@ export function splitLeaf(
 
   const next = insertSplit(tree, leafId, dup, orientation)
   return next ? { tree: next, newLeafId: dup.id } : null
+}
+
+// Like splitLeaf, but the new pane contains the given tab (e.g. a preview) instead of a
+// duplicate of the active editor.
+export function splitLeafWithTab(
+  tree: LayoutNode,
+  leafId: string,
+  orientation: 'row' | 'column',
+  newTab: OpenTab,
+): { tree: LayoutNode; newLeafId: string } | null {
+  const leaf = findLeaf(tree, leafId)
+  if (!leaf) return null
+  const newLeaf = makeLeaf([newTab], newTab.path)
+
+  if (tree.kind === 'leaf') {
+    if (tree.id !== leafId) return null
+    return { tree: wrapSplit(tree, newLeaf, orientation), newLeafId: newLeaf.id }
+  }
+  const next = insertSplit(tree, leafId, newLeaf, orientation)
+  return next ? { tree: next, newLeafId: newLeaf.id } : null
 }
 
 // Recursively find the parent split of `leafId` and either add an equal sibling (same

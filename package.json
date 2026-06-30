@@ -44,7 +44,10 @@
     "@uiw/codemirror-theme-monokai": "^4.25.10",
     "@uiw/codemirror-theme-solarized": "^4.25.10",
     "codemirror": "^6.0.2",
+    "dompurify": "^3.4.11",
     "lucide-preact": "^1.22.0",
+    "marked": "^18.0.5",
+    "mermaid": "^11.16.0",
     "preact": "^10.25.3"
   },
   "engines": {

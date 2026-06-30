@@ -1,5 +1,6 @@
 import { TabBar } from './TabBar'
 import { CodeEditor } from './CodeEditor'
+import { PreviewPane } from './PreviewPane'
 import type { EditorGroup } from '../lib/editorGroups'
 import { themeById } from '../lib/themes'
 
@@ -40,15 +41,24 @@ export function EditorGroupView({
       />
       <div class="editor-body">
         {activeTab ? (
-          <CodeEditor
-            path={activeTab.path}
-            filename={activeTab.name}
-            value={activeTab.content}
-            themeKey={themeById(themeId).editorTheme}
-            gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
-            onChange={(content) => onChangeContent(activeTab.path, content)}
-            onSave={() => onSave(activeTab.path)}
-          />
+          activeTab.kind === 'preview' ? (
+            <PreviewPane
+              sourceName={activeTab.sourcePath ? (activeTab.sourcePath.split('/').pop() ?? activeTab.name) : activeTab.name}
+              content={activeTab.content}
+              dark={themeId !== 'light-plus'}
+              idPrefix={activeTab.path.replace(/[^a-zA-Z0-9]/g, '-')}
+            />
+          ) : (
+            <CodeEditor
+              path={activeTab.path}
+              filename={activeTab.name}
+              value={activeTab.content}
+              themeKey={themeById(themeId).editorTheme}
+              gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
+              onChange={(content) => onChangeContent(activeTab.path, content)}
+              onSave={() => onSave(activeTab.path)}
+            />
+          )
         ) : (
           <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} />
         )}

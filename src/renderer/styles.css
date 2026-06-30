@@ -749,3 +749,66 @@ html, body, #app {
 .theme-swatches .sw { width: 18px; height: 18px; display: block; }
 .theme-name { flex: 1; font-size: 13px; }
 .theme-check { color: var(--bg-statusbar); }
+
+/* Markdown / Mermaid preview pane */
+.preview-pane {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+.preview-content {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 40px 80px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.preview-content h1, .preview-content h2, .preview-content h3,
+.preview-content h4, .preview-content h5, .preview-content h6 {
+  color: var(--fg-bright);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+.preview-content h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-soft); }
+.preview-content h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-soft); }
+.preview-content h3 { font-size: 1.25em; }
+.preview-content p { margin: 0 0 1em; }
+.preview-content a { color: var(--bg-statusbar); text-decoration: none; }
+.preview-content a:hover { text-decoration: underline; }
+.preview-content ul, .preview-content ol { margin: 0 0 1em; padding-left: 1.6em; }
+.preview-content li { margin: 0.2em 0; }
+.preview-content code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-tab-inactive);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+.preview-content pre {
+  background: var(--bg-tab-inactive);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow: auto;
+  margin: 0 0 1em;
+}
+.preview-content pre code { background: none; padding: 0; font-size: 0.85em; }
+.preview-content blockquote {
+  margin: 0 0 1em;
+  padding: 0 1em;
+  color: var(--fg-dim);
+  border-left: 3px solid var(--border-soft);
+}
+.preview-content table { border-collapse: collapse; margin: 0 0 1em; }
+.preview-content th, .preview-content td { border: 1px solid var(--border-soft); padding: 6px 12px; }
+.preview-content th { background: var(--bg-tab-inactive); font-weight: 600; }
+.preview-content img { max-width: 100%; }
+.preview-content hr { border: none; border-top: 1px solid var(--border-soft); margin: 1.5em 0; }
+.preview-mermaid { display: flex; justify-content: center; margin: 1em 0; }
+.preview-mermaid svg { max-width: 100%; height: auto; }
+.preview-loading, .preview-error { color: var(--fg-dim); font-family: var(--font-mono); font-size: 12px; }
+.preview-error { color: #e06c75; white-space: pre-wrap; }
