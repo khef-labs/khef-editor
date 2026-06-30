@@ -1,12 +1,12 @@
 # Khef Editor
 
-A standalone, lightweight code editor — VS Code-lite without plugins, marketplace, or an extension host. Built on Electron + Preact + Vite (CodeMirror lands in the next phase).
+A standalone, lightweight code editor — VS Code-lite without plugins, marketplace, or an extension host. Built on Electron + Preact + Vite + CodeMirror 6.
 
 This is a **net-new, fully independent app**. It shares no code with [khef](../khef) and imports nothing from it. khef's editor is used only as design reference. See the tech design in khef memory `design-doc-khef-editor` (project `khef-editor`).
 
 ## Status
 
-Scaffold phase complete: hardened Electron shell + typed IPC filesystem surface with workspace-root confinement. Editor core (file tree, fuzzy finder, CodeMirror, tabs/splits), search, and git are subsequent stories.
+Working editor: file tree, Cmd+P fuzzy finder, tabbed CodeMirror editing with syntax highlighting, color themes + settings, Emacs-style split panes (C-x 3/2/1/0), and project-wide search with search-and-replace. The git source-control panel and polish (app icon, recent folders, persisted layout) are the remaining stories.
 
 ## Architecture
 
@@ -17,15 +17,46 @@ Scaffold phase complete: hardened Electron shell + typed IPC filesystem surface 
 - **`electron/types.d.ts`** — the `editorApi` contract, shared with the renderer.
 - **`src/renderer/`** — Preact UI (empty editor shell for now).
 
-## Develop
+## Install
+
+Fresh clone on a new machine — requires **Node ≥ 22** and **npm ≥ 10** (enforced by `engines`; check with `node -v`).
 
 ```bash
+cd khef-editor
 npm install
-npm run dev        # Vite dev server + Electron with HMR
-npm run typecheck  # tsc --noEmit
-npm run build      # build renderer to dist/
-npm run package    # unsigned .app into dist-app/ (no DMG)
+npm run dev          # Vite dev server + Electron with HMR
 ```
+
+That's the whole dev loop. No `.env`, no database, no khef dependency — fully standalone.
+
+```bash
+npm run typecheck    # tsc --noEmit (optional sanity check)
+npm run build        # build renderer to dist/
+```
+
+## Build the Mac app (Spotlight / Cmd+Space launchable)
+
+```bash
+npm run package      # builds renderer + unsigned .app into dist-app/mac-arm64/
+```
+
+Install it to `/Applications` so Spotlight indexes it:
+
+```bash
+rm -rf "/Applications/Khef Editor.app"
+cp -R "dist-app/mac-arm64/Khef Editor.app" /Applications/
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Khef Editor.app"
+```
+
+Use `npm run dist` instead of `npm run package` to produce a DMG.
+
+**Notes**
+
+- The app is **unsigned** (no notarization). On a different Mac, Gatekeeper blocks first launch — right-click → Open, or clear the quarantine flag:
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Khef Editor.app"
+  ```
+- Output path assumes **Apple Silicon** (`mac-arm64`). On Intel, electron-builder emits `mac` (x64) — adjust the paths above accordingly.
 
 ## Security
 
