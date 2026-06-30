@@ -1,8 +1,15 @@
 import { useEffect, useRef } from 'preact/hooks'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, Compartment, EditorSelection, Prec } from '@codemirror/state'
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import {
+  defaultKeymap, history, historyKeymap, indentWithTab, undo, redo,
+  cursorCharForward, cursorCharBackward, cursorLineUp, cursorLineDown,
+  cursorLineStart, cursorLineEnd, cursorDocStart, cursorDocEnd,
+  cursorGroupForward, cursorGroupBackward,
+  selectCharForward, selectCharBackward, selectLineUp, selectLineDown,
+  selectLineStart, selectLineEnd, selectGroupForward, selectGroupBackward,
+} from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { languageForFilename } from '../lib/language'
@@ -69,6 +76,23 @@ interface CodeEditorProps {
   onSave: () => void
 }
 
+type CMCommand = (view: EditorView) => boolean
+
+// Emacs kill ring — shared across all editors (like Emacs), mirroring khef's editor.
+let killRing = ''
+
+// The most-recently-focused editor view, so app-level chords (e.g. C-x h select-all)
+// can target the active editor.
+let activeEditorView: EditorView | null = null
+
+export function selectAllInActiveEditor(): boolean {
+  const view = activeEditorView
+  if (!view) return false
+  view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) })
+  view.focus()
+  return true
+}
+
 export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -79,6 +103,123 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   const onSaveRef = useRef(onSave)
   onChangeRef.current = onChange
   onSaveRef.current = onSave
+  // Emacs "mark" (set with C-Space): when active, motion commands extend the selection.
+  const markActiveRef = useRef(false)
+
+  // Build the Emacs keybinding extension. Mirrors khef's editor: mark + region, kill ring
+  // (C-k / C-w / C-y), open line (C-o), readline motion (C-f/b/p/n/a/e), word motion
+  // (M-f/b), and document jumps (M-< / M->). Movement extends the selection when the mark
+  // is active. Word/doc motion lives in domEventHandlers because macOS Option transforms
+  // the typed character, breaking CM6 keymap matching (event.code is stable).
+  const buildEmacsExtension = () => {
+    const clearMark = (view?: EditorView | null) => {
+      markActiveRef.current = false
+      if (!view) return
+      const { main } = view.state.selection
+      if (!main.empty) view.dispatch({ selection: EditorSelection.cursor(main.head) })
+    }
+    const setMark = (view: EditorView) => {
+      markActiveRef.current = true
+      view.dispatch({ selection: EditorSelection.cursor(view.state.selection.main.head) })
+      return true
+    }
+    const motion = (move: CMCommand, selectMove: CMCommand): CMCommand =>
+      (view) => (markActiveRef.current ? selectMove(view) : move(view))
+
+    return Prec.highest(keymap.of([
+      { key: 'Ctrl-Space', preventDefault: true, run: setMark },
+      { key: 'Ctrl-g', run: (view) => {
+          if (!markActiveRef.current && view.state.selection.main.empty) return false
+          clearMark(view); return true
+        } },
+      { key: 'Ctrl-p', preventDefault: true, run: motion(cursorLineUp, selectLineUp) },
+      { key: 'Ctrl-n', preventDefault: true, run: motion(cursorLineDown, selectLineDown) },
+      { key: 'Ctrl-f', preventDefault: true, run: motion(cursorCharForward, selectCharForward) },
+      { key: 'Ctrl-b', preventDefault: true, run: motion(cursorCharBackward, selectCharBackward) },
+      { key: 'Ctrl-a', preventDefault: true, run: motion(cursorLineStart, selectLineStart) },
+      { key: 'Ctrl-e', preventDefault: true, run: motion(cursorLineEnd, selectLineEnd) },
+      { key: 'Ctrl-d', preventDefault: true, run: (view) => {
+          const { head } = view.state.selection.main
+          if (head >= view.state.doc.length) return false
+          view.dispatch({ changes: { from: head, to: head + 1 } }); return true
+        } },
+      { key: 'Ctrl-k', preventDefault: true, run: (view) => {
+          const { head } = view.state.selection.main
+          const line = view.state.doc.lineAt(head)
+          const to = head >= line.to ? Math.min(line.to + 1, view.state.doc.length) : line.to
+          if (head === to) return false
+          killRing = view.state.sliceDoc(head, to)
+          view.dispatch({ changes: { from: head, to } })
+          markActiveRef.current = false
+          navigator.clipboard.writeText(killRing).catch(() => {})
+          return true
+        } },
+      { key: 'Ctrl-w', preventDefault: true, run: (view) => {
+          const { main } = view.state.selection
+          if (main.empty) return false
+          killRing = view.state.sliceDoc(main.from, main.to)
+          view.dispatch({ changes: { from: main.from, to: main.to }, selection: EditorSelection.cursor(main.from) })
+          markActiveRef.current = false
+          navigator.clipboard.writeText(killRing).catch(() => {})
+          return true
+        } },
+      { key: 'Alt-w', preventDefault: true, run: (view) => {
+          const { main } = view.state.selection
+          if (main.empty) return false
+          killRing = view.state.sliceDoc(main.from, main.to)
+          navigator.clipboard.writeText(killRing).catch(() => {})
+          clearMark(view)
+          return true
+        } },
+      { key: 'Ctrl-y', preventDefault: true, run: (view) => {
+          if (!killRing) return false
+          const { main } = view.state.selection
+          view.dispatch({
+            changes: { from: main.from, to: main.to, insert: killRing },
+            selection: EditorSelection.cursor(main.from + killRing.length),
+          })
+          return true
+        } },
+      { key: 'Ctrl-o', preventDefault: true, run: (view) => {
+          const { head } = view.state.selection.main
+          const line = view.state.doc.lineAt(head)
+          view.dispatch({ changes: { from: line.from, insert: '\n' }, selection: EditorSelection.cursor(line.from) })
+          return true
+        } },
+      { key: 'Ctrl-z', preventDefault: true, run: (view) => undo(view) },
+      { key: 'Ctrl-Shift-z', preventDefault: true, run: (view) => redo(view) },
+    ]))
+  }
+
+  // Word/doc motion via DOM events (macOS Option transforms event.key; event.code is stable).
+  const emacsDomHandlers = () => EditorView.domEventHandlers({
+    keydown: (ev, view) => {
+      const event = ev as KeyboardEvent
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        if (event.code === 'KeyF' || event.code === 'KeyB') {
+          event.preventDefault()
+          const fwd = event.code === 'KeyF'
+          if (markActiveRef.current) (fwd ? selectGroupForward : selectGroupBackward)(view)
+          else (fwd ? cursorGroupForward : cursorGroupBackward)(view)
+          return true
+        }
+        if (event.shiftKey && (event.code === 'Comma' || event.code === 'Period')) {
+          event.preventDefault()
+          const toStart = event.code === 'Comma'
+          if (markActiveRef.current) {
+            const anchor = view.state.selection.main.anchor
+            view.dispatch({ selection: EditorSelection.range(anchor, toStart ? 0 : view.state.doc.length), scrollIntoView: true })
+          } else {
+            (toStart ? cursorDocStart : cursorDocEnd)(view)
+          }
+          return true
+        }
+      }
+      return false
+    },
+    mousedown: (_e, view) => { markActiveRef.current = false; activeEditorView = view; return false },
+    focusin: (_e, view) => { activeEditorView = view; return false },
+  })
 
   // Build the view once.
   useEffect(() => {
@@ -86,6 +227,8 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     const state = EditorState.create({
       doc: value,
       extensions: [
+        buildEmacsExtension(),
+        emacsDomHandlers(),
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
@@ -107,7 +250,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         languageComp.current.of(languageForFilename(filename)),
         themeComp.current.of(editorThemeExtension(themeKey)),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) onChangeRef.current(u.state.doc.toString())
+          if (u.docChanged) { markActiveRef.current = false; onChangeRef.current(u.state.doc.toString()) }
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px' },
@@ -145,7 +288,9 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     })
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
+    activeEditorView = view
     return () => {
+      if (activeEditorView === view) activeEditorView = null
       view.destroy()
       viewRef.current = null
     }
@@ -167,6 +312,19 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
+
+  // Sync external value changes (e.g. revert-to-saved) that arrive without a path change.
+  // When the user types, onChange flows the same text back as `value`, so it already
+  // matches the doc and this no-ops — only genuine external changes replace the doc.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const current = view.state.doc.toString()
+    if (value !== current) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
 
   // Reconfigure the editor theme live when the app theme changes.
   useEffect(() => {

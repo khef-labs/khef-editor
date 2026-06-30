@@ -7,6 +7,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
+import { selectAllInActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { isPreviewable } from './lib/preview'
 import {
@@ -342,6 +343,18 @@ export function App() {
     if (leaf?.activePath) closeTab(leaf.id, leaf.activePath)
   }, [closeTab])
 
+  // Revert the focused tab to its last-saved content (Ctrl+9, like khef's editor).
+  const revertFocusedTab = useCallback(() => {
+    const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
+    const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
+    if (!leaf || !tab || tab.kind === 'preview') return
+    if (tab.content === tab.savedContent) return
+    // Restore content in every pane showing this file so split views stay in sync.
+    setTree((prev) => mapLeaves(prev, (l) => ({
+      ...l, tabs: l.tabs.map((t) => (t.path === tab.path ? { ...t, content: t.savedContent } : t)),
+    })))
+  }, [])
+
   // Menu wiring (open-file / open-folder / save / close-tab / quick-open / settings / split).
   useEffect(() => {
     const offOpenFile = window.editorApi.onMenu('menu:open-file', () => void openFileViaDialog())
@@ -360,10 +373,18 @@ export function App() {
   const prefixRef = useRef(false)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Cmd/Ctrl+P quick open (independent of the C-x prefix).
-      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && !e.altKey) {
+      // Cmd+P quick open. Cmd only (NOT Ctrl) so Ctrl+P stays free for the editor's
+      // Emacs cursor-up binding.
+      if (e.metaKey && !e.ctrlKey && e.key === 'p' && !e.altKey) {
         e.preventDefault()
         if (root) setQuickOpen((v) => !v)
+        return
+      }
+      // Ctrl+9 — revert the focused tab to its saved content (Emacs-friendly, like khef).
+      if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '9' || e.code === 'Digit9')) {
+        e.preventDefault()
+        e.stopPropagation()
+        revertFocusedTab()
         return
       }
       // Arm the C-x prefix.
@@ -378,6 +399,7 @@ export function App() {
         else if (e.key === '2') { e.preventDefault(); splitFocused('column') }
         else if (e.key === '1') { e.preventDefault(); soloFocusedPane() }
         else if (e.key === '0') { e.preventDefault(); closeFocusedPane() }
+        else if (e.key === 'h' || e.key === 'H') { e.preventDefault(); selectAllInActiveEditor() } // C-x h: select all
         // Any key ends the prefix (whether or not it was a pane command).
         prefixRef.current = false
         return
@@ -385,7 +407,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [root, splitFocused, soloFocusedPane, closeFocusedPane])
+  }, [root, splitFocused, soloFocusedPane, closeFocusedPane, revertFocusedTab])
 
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]

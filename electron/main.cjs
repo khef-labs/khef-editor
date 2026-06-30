@@ -170,7 +170,7 @@ function buildMenu() {
       submenu: [
         {
           label: 'Quick Open…',
-          accelerator: 'CmdOrCtrl+P',
+          accelerator: 'Cmd+P', // Cmd only — Ctrl+P is the editor's Emacs cursor-up
           click: () => mainWindow?.webContents.send('menu:quick-open'),
         },
         {
