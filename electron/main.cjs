@@ -150,6 +150,12 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+W',
           click: () => mainWindow?.webContents.send('menu:close-tab'),
         },
+        { type: 'separator' },
+        {
+          label: 'Split Editor',
+          accelerator: 'CmdOrCtrl+\\',
+          click: () => mainWindow?.webContents.send('menu:split'),
+        },
       ],
     },
     { role: 'editMenu' },

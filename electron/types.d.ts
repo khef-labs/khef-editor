@@ -57,7 +57,7 @@ export interface AppSettings {
   theme: string
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab'
+export type MenuChannel = 'menu:open-folder' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split'
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
