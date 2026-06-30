@@ -90,7 +90,7 @@ export interface AppSettings {
   sidebarWidth: number
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar'
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>

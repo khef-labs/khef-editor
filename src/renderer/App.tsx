@@ -98,6 +98,12 @@ export function App() {
     }
   }, [sidebarCollapsed, sidebarView])
 
+  // Cmd+B: toggle the sidebar open/closed (VS Code behavior).
+  const toggleSidebar = useCallback(() => {
+    setSettingsOpen(false)
+    setSidebarCollapsed((v) => !v)
+  }, [])
+
   const selectTheme = useCallback((id: string) => {
     const t = themeById(id)
     setThemeId(t.id)
@@ -306,8 +312,9 @@ export function App() {
     const offSettings = window.editorApi.onMenu('menu:settings', () => setSettingsOpen((v) => !v))
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
-    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit() }
-  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused])
+    const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
+    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar() }
+  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)

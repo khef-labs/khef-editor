@@ -173,6 +173,11 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+P',
           click: () => mainWindow?.webContents.send('menu:quick-open'),
         },
+        {
+          label: 'Toggle Sidebar',
+          accelerator: 'CmdOrCtrl+B',
+          click: () => mainWindow?.webContents.send('menu:toggle-sidebar'),
+        },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
