@@ -18,6 +18,11 @@ export interface OpenTab {
   sourcePath?: string
   // For diff tabs: the diff spec (mode/file/hash).
   diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
+  // VS Code "preview tab" soft-open: an ephemeral editor tab opened by a single-click in
+  // the Explorer. The next single-click REPLACES it (at most one per pane) instead of
+  // adding a tab. Cleared (promoted to a permanent tab) by double-clicking the file/tab or
+  // editing the file. Only ever set on plain editor tabs — never on kind:'preview'/'diff'.
+  ephemeral?: boolean
 }
 
 export interface LeafNode {

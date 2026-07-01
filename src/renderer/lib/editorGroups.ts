@@ -11,6 +11,9 @@ export interface OpenTab {
   kind?: 'editor' | 'preview' | 'diff'
   sourcePath?: string
   diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
+  // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Only set
+  // on plain editor tabs (never kind:'preview'/'diff').
+  ephemeral?: boolean
 }
 
 export interface EditorGroup {

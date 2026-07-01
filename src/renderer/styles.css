@@ -408,6 +408,9 @@ html, body, #app {
   border-top: 1px solid var(--accent);
 }
 .tab-name { line-height: 1; }
+/* Ephemeral (VS Code "preview") tab: single-clicked in the Explorer, replaced on the next
+   single-click. Shown italic until promoted (double-click / edit). */
+.tab.ephemeral .tab-name { font-style: italic; }
 .tab-close {
   display: inline-flex;
   align-items: center;

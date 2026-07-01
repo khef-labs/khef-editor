@@ -8,9 +8,11 @@ interface TabBarProps {
   activePath: string | null
   onActivate: (path: string) => void
   onClose: (path: string) => void
+  // Double-clicking an ephemeral (preview) tab promotes it to a permanent tab.
+  onPromote: (path: string) => void
 }
 
-export function TabBar({ tabs, activePath, onActivate, onClose }: TabBarProps) {
+export function TabBar({ tabs, activePath, onActivate, onClose, onPromote }: TabBarProps) {
   if (tabs.length === 0) return null
   return (
     <div class="tabbar" data-testid="tabbar">
@@ -21,8 +23,9 @@ export function TabBar({ tabs, activePath, onActivate, onClose }: TabBarProps) {
           return (
             <div
               key={t.path}
-              class={`tab${active ? ' active' : ''}`}
+              class={`tab${active ? ' active' : ''}${t.ephemeral ? ' ephemeral' : ''}`}
               onClick={() => onActivate(t.path)}
+              onDblClick={() => onPromote(t.path)}
               data-testid={`tab-${t.name}`}
             >
               <span class="tab-name">{t.name}</span>

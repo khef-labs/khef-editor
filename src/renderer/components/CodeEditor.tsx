@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks'
-import { EditorState, Compartment, EditorSelection, Prec } from '@codemirror/state'
+import { EditorState, Compartment, EditorSelection, Prec, Annotation } from '@codemirror/state'
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
 import {
@@ -74,7 +74,15 @@ interface CodeEditorProps {
   gotoLine?: { line: number; token: number } | null
   onChange: (value: string) => void
   onSave: () => void
+  // Fired only for USER-originated edits (typing, kill/yank, etc.) — NOT for programmatic
+  // doc replacement (path swap, value sync). Used to promote a preview (ephemeral) tab to a
+  // permanent one, since editing a soft-opened file commits it (VS Code behavior).
+  onUserEdit?: () => void
 }
+
+// Marks a transaction as a programmatic document replacement (path swap / external value
+// sync) so the update listener can distinguish it from a genuine user edit.
+const ProgrammaticDoc = Annotation.define<boolean>()
 
 type CMCommand = (view: EditorView) => boolean
 
@@ -93,7 +101,7 @@ export function selectAllInActiveEditor(): boolean {
   return true
 }
 
-export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
@@ -101,8 +109,10 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   // Keep latest callbacks without rebuilding the view.
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
+  const onUserEditRef = useRef(onUserEdit)
   onChangeRef.current = onChange
   onSaveRef.current = onSave
+  onUserEditRef.current = onUserEdit
   // Emacs "mark" (set with C-Space): when active, motion commands extend the selection.
   const markActiveRef = useRef(false)
 
@@ -250,7 +260,15 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         languageComp.current.of(languageForFilename(filename)),
         themeComp.current.of(editorThemeExtension(themeKey)),
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) { markActiveRef.current = false; onChangeRef.current(u.state.doc.toString()) }
+          if (u.docChanged) {
+            markActiveRef.current = false
+            onChangeRef.current(u.state.doc.toString())
+            // Promote a preview tab only on a genuine user edit. Programmatic doc
+            // replacement (path swap / value sync) is tagged with ProgrammaticDoc and must
+            // NOT count as an edit, or swapping the previewed file would promote it.
+            const programmatic = u.transactions.some((t) => t.annotation(ProgrammaticDoc))
+            if (!programmatic) onUserEditRef.current?.()
+          }
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px' },
@@ -306,6 +324,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
         effects: languageComp.current.reconfigure(languageForFilename(filename)),
+        annotations: ProgrammaticDoc.of(true), // path swap — not a user edit
       })
     } else {
       view.dispatch({ effects: languageComp.current.reconfigure(languageForFilename(filename)) })
@@ -321,7 +340,10 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     if (!view) return
     const current = view.state.doc.toString()
     if (value !== current) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+        annotations: ProgrammaticDoc.of(true), // external value sync (e.g. revert) — not a user edit
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])

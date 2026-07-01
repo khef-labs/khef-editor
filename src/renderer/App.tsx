@@ -139,16 +139,33 @@ export function App() {
 
   // Open a file into the focused leaf (or activate it there if already open). When
   // `preloaded` is given (loose file already read in main), skip the confined read.
+  //
+  // `ephemeral` requests VS Code "preview tab" behavior: the file soft-opens in an
+  // ephemeral tab, and a subsequent ephemeral open in the same leaf REPLACES it in place
+  // (at most one ephemeral tab per leaf) instead of adding a tab.
+  //
+  // Async-safety: the target leaf is captured from a ref (focus can move while a read is in
+  // flight), and each open bumps a per-leaf request token. After the async read, the
+  // functional setTree aborts if a newer open for that leaf has superseded this one — so
+  // rapid single-clicks and click→double-click races can't let a stale read clobber the tab.
   const openPath = useCallback(async (
     filePath: string,
     name: string,
     preloaded?: { content: string; loose?: boolean },
+    opts?: { ephemeral?: boolean },
   ) => {
     setError(null)
-    const leaf = findLeaf(tree, activeLeafId)
+    const leafId = activeLeafIdRef.current
+    const ephemeral = !!opts?.ephemeral
+    const token = (openTokens.current.get(leafId) ?? 0) + 1
+    openTokens.current.set(leafId, token)
+
+    const leaf = findLeaf(treeRef.current, leafId)
     const already = leaf?.tabs.find((t) => t.path === filePath)
     if (already) {
-      setTree((prev) => updateLeaf(prev, activeLeafId, (l) => ({ ...l, activePath: filePath })))
+      // Already open in this leaf → just activate. A permanent tab is NOT demoted to
+      // ephemeral; an existing ephemeral tab for this exact file stays as-is.
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: filePath })))
       return
     }
     let content: string
@@ -163,16 +180,62 @@ export function App() {
         return
       }
     }
-    setTree((prev) => updateLeaf(prev, activeLeafId, (l) => {
-      const tab: OpenTab = { path: filePath, name, content, savedContent: content, loose: preloaded?.loose }
-      return { ...l, tabs: [...l.tabs, tab], activePath: filePath }
-    }))
-  }, [tree, activeLeafId])
+    setTree((prev) => {
+      // Superseded by a newer open for this leaf while the read was in flight → drop.
+      if (openTokens.current.get(leafId) !== token) return prev
+      return updateLeaf(prev, leafId, (l) => {
+        // Re-check inside the latest state: if the file is now open, just activate it.
+        if (l.tabs.some((t) => t.path === filePath)) {
+          return { ...l, activePath: filePath }
+        }
+        const tab: OpenTab = { path: filePath, name, content, savedContent: content, loose: preloaded?.loose, ephemeral: ephemeral || undefined }
+        if (ephemeral) {
+          // Replace an existing ephemeral (plain editor) tab in place, preserving position.
+          const idx = l.tabs.findIndex((t) => t.ephemeral && (t.kind === undefined || t.kind === 'editor'))
+          if (idx >= 0) {
+            const tabs = [...l.tabs]
+            tabs[idx] = tab
+            return { ...l, tabs, activePath: filePath }
+          }
+        }
+        return { ...l, tabs: [...l.tabs, tab], activePath: filePath }
+      })
+    })
+  }, [])
 
+  // Explorer single-click → soft-open (ephemeral). Double-click promotes (see openFilePermanent).
   const openFile = useCallback((entry: FsTreeEntry) => {
     if (entry.type !== 'file') return
+    void openPath(entry.path, entry.name, undefined, { ephemeral: true })
+  }, [openPath])
+
+  // Explorer double-click → open permanently (never ephemeral). If the file is already the
+  // ephemeral tab, promote it in place.
+  const openFilePermanent = useCallback((entry: FsTreeEntry) => {
+    if (entry.type !== 'file') return
+    const leafId = activeLeafIdRef.current
+    // Bump the token so any in-flight ephemeral read for this leaf is invalidated.
+    openTokens.current.set(leafId, (openTokens.current.get(leafId) ?? 0) + 1)
+    const leaf = findLeaf(treeRef.current, leafId)
+    if (leaf?.tabs.some((t) => t.path === entry.path)) {
+      // Already open → promote to permanent + activate.
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({
+        ...l,
+        tabs: l.tabs.map((t) => (t.path === entry.path ? { ...t, ephemeral: undefined } : t)),
+        activePath: entry.path,
+      })))
+      return
+    }
     void openPath(entry.path, entry.name)
   }, [openPath])
+
+  // Promote a tab to permanent (double-click the tab). No-op for preview/diff tabs.
+  const promoteTab = useCallback((leafId: string, path: string) => {
+    setTree((prev) => updateLeaf(prev, leafId, (l) => ({
+      ...l,
+      tabs: l.tabs.map((t) => (t.path === path && (t.kind === undefined || t.kind === 'editor') ? { ...t, ephemeral: undefined } : t)),
+    })))
+  }, [])
 
   // Open a single file via native dialog as a loose tab — does NOT change the workspace
   // root or the tree. The file is read in main (it may live outside any root) and opens
@@ -230,6 +293,19 @@ export function App() {
     setTree((prev) => mapLeaves(prev, (l) => ({
       ...l, tabs: l.tabs.map((t) => (t.kind === 'preview' && t.sourcePath === path ? { ...t, content, savedContent: content } : t)),
     })))
+  }, [])
+
+  // A genuine USER edit in a tab promotes it from ephemeral (preview) to permanent, like
+  // VS Code. Fired via CodeEditor's onUserEdit — NOT on programmatic doc replacement, so
+  // swapping the previewed file doesn't self-promote. Also bump the leaf's open token so an
+  // in-flight ephemeral read can't re-mark this now-permanent tab.
+  const editTab = useCallback((leafId: string, path: string) => {
+    openTokens.current.set(leafId, (openTokens.current.get(leafId) ?? 0) + 1)
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      const tab = l.tabs.find((t) => t.path === path)
+      if (!tab || !tab.ephemeral) return l
+      return { ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, ephemeral: undefined } : t)) }
+    }))
   }, [])
 
   const saveTab = useCallback(async (leafId: string, path: string) => {
@@ -291,6 +367,10 @@ export function App() {
   activeLeafIdRef.current = activeLeafId
   const treeRef = useRef(tree)
   treeRef.current = tree
+  // Per-leaf open request token (leafId → counter). Bumped on every file open; a pending
+  // async read aborts if its token is superseded, preventing stale reads from clobbering
+  // the tab during rapid single-clicks or click→double-click races.
+  const openTokens = useRef<Map<string, number>>(new Map())
 
   // --- Pane operations (Emacs chords) ---
 
@@ -488,7 +568,7 @@ export function App() {
           {root ? (
             <>
               <div class="explorer-root">{rootName}</div>
-              <FileTree entries={entries} activePath={treeActivePath} onOpenFile={openFile} />
+              <FileTree entries={entries} activePath={treeActivePath} onOpenFile={openFile} onOpenFilePermanent={openFilePermanent} />
             </>
           ) : (
             <div class="sidebar-empty">
@@ -542,6 +622,8 @@ export function App() {
               onActivateTab={activateTab}
               onCloseTab={closeTab}
               onChangeContent={changeContent}
+              onUserEdit={editTab}
+              onPromoteTab={promoteTab}
               onSave={(leafId, path) => void saveTab(leafId, path)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
