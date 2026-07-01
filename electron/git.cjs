@@ -26,9 +26,11 @@ const HARDENING = [
   '--no-pager',
 ]
 
-// Run a read-only git command in the workspace root. Rejects if no workspace is open.
-function runGit(args) {
-  const root = ws.getWorkspaceRoot()
+// Run a read-only git command in a window's workspace root. The window id is an
+// explicit parameter (never inferred from a global or focused window) so concurrent
+// git IPC from two windows cannot race. Rejects if that window has no workspace open.
+function runGit(wcId, args) {
+  const root = ws.getWorkspaceRoot(wcId)
   if (!root) return Promise.reject(new Error('No workspace open'))
   return new Promise((resolve, reject) => {
     execFile('git', [...HARDENING, ...args], {
@@ -63,9 +65,9 @@ function statusBadge(xy) {
   return 'M'
 }
 
-async function isGitRepo() {
+async function isGitRepo(wcId) {
   try {
-    const out = await runGit(['rev-parse', '--is-inside-work-tree'])
+    const out = await runGit(wcId, ['rev-parse', '--is-inside-work-tree'])
     return out.trim() === 'true'
   } catch {
     return false
@@ -74,18 +76,19 @@ async function isGitRepo() {
 
 function registerGitIpc() {
   // Is the open workspace a git repo? Plus current branch.
-  ipcMain.handle('git:info', async () => {
-    if (!ws.getWorkspaceRoot()) return { isRepo: false, branch: null }
-    const repo = await isGitRepo()
+  ipcMain.handle('git:info', async (event) => {
+    const wcId = event.sender.id
+    if (!ws.getWorkspaceRoot(wcId)) return { isRepo: false, branch: null }
+    const repo = await isGitRepo(wcId)
     if (!repo) return { isRepo: false, branch: null }
     let branch = null
-    try { branch = (await runGit(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() } catch { /* detached */ }
+    try { branch = (await runGit(wcId, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() } catch { /* detached */ }
     return { isRepo: true, branch }
   })
 
   // Working-tree changes (porcelain v1, -z NUL-delimited so filenames are safe).
-  ipcMain.handle('git:status', async () => {
-    const out = await runGit(['status', '--porcelain', '-z', '--untracked-files=all'])
+  ipcMain.handle('git:status', async (event) => {
+    const out = await runGit(event.sender.id, ['status', '--porcelain', '-z', '--untracked-files=all'])
     const parts = out.split('\0').filter(Boolean)
     const files = []
     for (let i = 0; i < parts.length; i++) {
@@ -100,12 +103,12 @@ function registerGitIpc() {
   })
 
   // Commit history, paginated. skip/limit drive the infinite scroll.
-  ipcMain.handle('git:log', async (_e, skip, limit) => {
+  ipcMain.handle('git:log', async (event, skip, limit) => {
     const s = Number.isInteger(skip) && skip >= 0 ? skip : 0
     const n = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 500) : 50
     // Use a record/field separator unlikely to appear in messages.
     const FMT = '%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1e'
-    const out = await runGit(['log', `--skip=${s}`, `--max-count=${n}`, '--date=short', `--pretty=format:${FMT}`])
+    const out = await runGit(event.sender.id, ['log', `--skip=${s}`, `--max-count=${n}`, '--date=short', `--pretty=format:${FMT}`])
     const commits = out.split('\x1e').map((r) => r.trim()).filter(Boolean).map((r) => {
       const [hash, short, author, date, subject] = r.split('\x1f')
       return { hash, short, author, date, subject }
@@ -114,9 +117,9 @@ function registerGitIpc() {
   })
 
   // Files changed in a single commit.
-  ipcMain.handle('git:commitFiles', async (_e, hash) => {
+  ipcMain.handle('git:commitFiles', async (event, hash) => {
     if (typeof hash !== 'string' || !/^[0-9a-fA-F]{4,40}$/.test(hash)) throw new Error('Invalid commit hash')
-    const out = await runGit(['show', '--name-status', '--format=', '-z', hash])
+    const out = await runGit(event.sender.id, ['show', '--name-status', '--format=', '-z', hash])
     const parts = out.split('\0').filter(Boolean)
     const files = []
     for (let i = 0; i < parts.length; i++) {
@@ -139,7 +142,8 @@ function registerGitIpc() {
   // Diff for a file. mode 'working' = working tree vs HEAD; mode 'commit' = a commit vs
   // its parent. Returns the old and new file text so the renderer can show a side-by-side
   // diff. Old/new come from `git show <ref>:<path>` (read-only, no checkout).
-  ipcMain.handle('git:fileDiff', async (_e, args) => {
+  ipcMain.handle('git:fileDiff', async (event, args) => {
+    const wcId = event.sender.id
     const { mode, file, hash } = args || {}
     if (typeof file !== 'string' || file.length === 0) throw new Error('file required')
     // git treats paths from the repo root; reject path escapes defensively.
@@ -148,7 +152,7 @@ function registerGitIpc() {
     }
 
     async function show(ref) {
-      try { return await runGit(['show', `${ref}:${file}`]) } catch { return '' }
+      try { return await runGit(wcId, ['show', `${ref}:${file}`]) } catch { return '' }
     }
 
     if (mode === 'commit') {
@@ -160,7 +164,7 @@ function registerGitIpc() {
     const oldText = await show('HEAD')
     let newText = ''
     try {
-      const real = await ws.resolveExisting(file)
+      const real = await ws.resolveExisting(wcId, file)
       newText = require('node:fs').readFileSync(real, 'utf8')
     } catch { newText = '' }
     return { oldText, newText, oldLabel: 'HEAD', newLabel: 'Working Tree' }

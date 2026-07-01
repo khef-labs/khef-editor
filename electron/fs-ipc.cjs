@@ -18,9 +18,22 @@ function setWorkspaceOpenedHandler(fn) { onWorkspaceOpened = fn }
 const MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB text cap (design §7.3 #6)
 const MAX_TREE_ENTRIES = 20000 // bound a pathological folder from freezing the UI
 
-// Realpaths the user opened via the loose "Open File" dialog. Only these may be saved
-// back outside the workspace root — the per-file write gate for detached files.
-const looseFiles = new Set()
+// Per-window loose-file allowlist: wcId → Set of realpaths the user opened via the
+// "Open File" dialog in THAT window. Only these may be saved back outside the window's
+// workspace root — the per-file write gate for detached files, scoped per window so one
+// window cannot save into a file another window opened loosely.
+const looseFilesByWindow = new Map()
+
+function looseSet(wcId) {
+  let s = looseFilesByWindow.get(wcId)
+  if (!s) { s = new Set(); looseFilesByWindow.set(wcId, s) }
+  return s
+}
+
+// Drop a window's loose-file allowlist (called by main.cjs on window destroy).
+function clearLooseFiles(wcId) {
+  looseFilesByWindow.delete(wcId)
+}
 
 // Directories the tree walk skips (perf + leak-surface). Mirrors khef's ignore set.
 const IGNORED_DIRS = new Set([
@@ -102,11 +115,14 @@ async function listFilesFlat(absDir, rootReal, out) {
 }
 
 function registerFsIpc() {
-  // Open a folder via native dialog, or accept an explicit path. Sets the workspace root.
+  // Open a folder via native dialog, or accept an explicit path. Sets the workspace
+  // root for the CALLING window (keyed by event.sender.id).
   ipcMain.handle('ws:open', async (event, requestedPath) => {
+    const wcId = event.sender.id
     let dir = requestedPath
     if (!dir) {
       const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win) throw new Error('Window is gone')
       const result = await dialog.showOpenDialog(win, {
         properties: ['openDirectory', 'createDirectory'],
       })
@@ -114,7 +130,7 @@ function registerFsIpc() {
       dir = result.filePaths[0]
     }
     assertString(dir, 'path')
-    const root = await ws.setWorkspaceRoot(dir)
+    const root = await ws.setWorkspaceRoot(wcId, dir)
     // Record the realpath'd root as recently-opened and refresh the Open Recent menu.
     await addRecentFolder(root)
     if (onWorkspaceOpened) onWorkspaceOpened()
@@ -127,7 +143,9 @@ function registerFsIpc() {
   // it. The realpath is recorded in `looseFiles` so it can later be saved back via
   // `fs:writeLooseFile` and nothing else.
   ipcMain.handle('fs:openLooseFile', async (event) => {
+    const wcId = event.sender.id
     const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('Window is gone')
     const result = await dialog.showOpenDialog(win, { properties: ['openFile'] })
     if (result.canceled || result.filePaths.length === 0) return null
     const real = await fsp.realpath(result.filePaths[0])
@@ -137,22 +155,24 @@ function registerFsIpc() {
       throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
     }
     const content = await fsp.readFile(real, 'utf8')
-    looseFiles.add(real)
+    looseSet(wcId).add(real)
     return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
   })
 
   // Write back a loose file. Only permitted for a realpath the user actually opened
-  // via the loose dialog this session — never an arbitrary renderer-supplied path.
-  ipcMain.handle('fs:writeLooseFile', async (_event, requestedPath, content) => {
+  // via the loose dialog IN THIS WINDOW — never an arbitrary renderer-supplied path,
+  // and never a file another window opened loosely.
+  ipcMain.handle('fs:writeLooseFile', async (event, requestedPath, content) => {
+    const wcId = event.sender.id
     assertString(requestedPath, 'path')
     if (typeof content !== 'string') throw new Error('content must be a string')
     if (Buffer.byteLength(content, 'utf8') > MAX_FILE_SIZE) {
       throw new Error('Content exceeds max file size')
     }
     // The tab carries the realpath we returned from openLooseFile. Re-realpath to be
-    // safe against symlink swaps, then require an exact allowlist match.
+    // safe against symlink swaps, then require an exact allowlist match for this window.
     const real = await fsp.realpath(path.resolve(requestedPath))
-    if (!looseFiles.has(real)) {
+    if (!looseSet(wcId).has(real)) {
       throw new Error('File was not opened via Open File')
     }
     await fsp.writeFile(real, content, 'utf8')
@@ -160,14 +180,14 @@ function registerFsIpc() {
     return { path: real, mtimeMs: st.mtimeMs, size: st.size }
   })
 
-  ipcMain.handle('ws:current', async () => {
-    return { root: ws.getWorkspaceRoot() }
+  ipcMain.handle('ws:current', async (event) => {
+    return { root: ws.getWorkspaceRoot(event.sender.id) }
   })
 
-  // Read a file's text content (UTF-8). Confined + size-capped.
-  ipcMain.handle('fs:read', async (_event, requestedPath) => {
+  // Read a file's text content (UTF-8). Confined to the calling window's root + size-capped.
+  ipcMain.handle('fs:read', async (event, requestedPath) => {
     assertString(requestedPath, 'path')
-    const real = await ws.resolveExisting(requestedPath)
+    const real = await ws.resolveExisting(event.sender.id, requestedPath)
     const st = await fsp.stat(real)
     if (!st.isFile()) throw new Error('Not a file')
     if (st.size > MAX_FILE_SIZE) {
@@ -178,13 +198,13 @@ function registerFsIpc() {
   })
 
   // Write text to a file (creates if needed). Uses write-resolution for new targets.
-  ipcMain.handle('fs:write', async (_event, requestedPath, content) => {
+  ipcMain.handle('fs:write', async (event, requestedPath, content) => {
     assertString(requestedPath, 'path')
     if (typeof content !== 'string') throw new Error('content must be a string')
     if (Buffer.byteLength(content, 'utf8') > MAX_FILE_SIZE) {
       throw new Error('Content exceeds max file size')
     }
-    const target = await ws.resolveForWrite(requestedPath)
+    const target = await ws.resolveForWrite(event.sender.id, requestedPath)
     await fsp.mkdir(path.dirname(target), { recursive: true })
     await fsp.writeFile(target, content, 'utf8')
     const st = await fsp.stat(target)
@@ -192,11 +212,12 @@ function registerFsIpc() {
   })
 
   // List a directory tree to a bounded depth.
-  ipcMain.handle('fs:tree', async (_event, requestedPath, depth) => {
-    const root = ws.getWorkspaceRoot()
+  ipcMain.handle('fs:tree', async (event, requestedPath, depth) => {
+    const wcId = event.sender.id
+    const root = ws.getWorkspaceRoot(wcId)
     const startReq = requestedPath || root
     if (!startReq) throw new Error('No workspace open')
-    const real = await ws.resolveExisting(startReq)
+    const real = await ws.resolveExisting(wcId, startReq)
     const st = await fsp.stat(real)
     if (!st.isDirectory()) throw new Error('Not a directory')
     const d = Number.isInteger(depth) ? Math.max(0, Math.min(depth, 32)) : 8
@@ -205,20 +226,21 @@ function registerFsIpc() {
     return { path: real, entries, truncated: budget.count >= MAX_TREE_ENTRIES }
   })
 
-  // Flat list of all files under the workspace root, for the Cmd+P fuzzy finder.
-  ipcMain.handle('fs:listFiles', async () => {
-    const root = ws.getWorkspaceRoot()
+  // Flat list of all files under the window's workspace root, for the Cmd+P fuzzy finder.
+  ipcMain.handle('fs:listFiles', async (event) => {
+    const root = ws.getWorkspaceRoot(event.sender.id)
     if (!root) throw new Error('No workspace open')
     const out = []
     await listFilesFlat(root, root, out)
     return { files: out, truncated: out.length >= MAX_FILE_LIST }
   })
 
-  // Delete a file or empty/recursive directory. Confined to the root.
-  ipcMain.handle('fs:delete', async (_event, requestedPath) => {
+  // Delete a file or empty/recursive directory. Confined to the window's root.
+  ipcMain.handle('fs:delete', async (event, requestedPath) => {
+    const wcId = event.sender.id
     assertString(requestedPath, 'path')
-    const real = await ws.resolveExisting(requestedPath)
-    if (real === ws.getWorkspaceRoot()) {
+    const real = await ws.resolveExisting(wcId, requestedPath)
+    if (real === ws.getWorkspaceRoot(wcId)) {
       throw new Error('Refusing to delete the workspace root')
     }
     await fsp.rm(real, { recursive: true, force: false })
@@ -226,4 +248,4 @@ function registerFsIpc() {
   })
 }
 
-module.exports = { registerFsIpc, setWorkspaceOpenedHandler, MAX_FILE_SIZE, IGNORED_DIRS }
+module.exports = { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, MAX_FILE_SIZE, IGNORED_DIRS }

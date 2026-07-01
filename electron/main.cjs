@@ -8,21 +8,23 @@
 const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
-const { registerFsIpc, setWorkspaceOpenedHandler } = require('./fs-ipc.cjs')
+const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles } = require('./fs-ipc.cjs')
 const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
+const ws = require('./workspace.cjs')
 
 const isDev = process.env.KHEF_EDITOR_DEV === '1'
 const DEV_URL = 'http://localhost:5273'
 
 app.setName('Khef Editor')
 
-let mainWindow = null
 let isQuitting = false // true only during an explicit app quit (Cmd+Q / menu Quit)
 
+// Create a new editor window. Each window is an independent workspace: its fs/search/git
+// IPC is confined to whatever folder IT opens, keyed by webContents.id. Returns the window.
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 720,
@@ -39,26 +41,75 @@ function createWindow() {
     },
   })
 
+  // Capture this window's webContents id once, at creation. All per-window state
+  // (workspace root, loose-file allowlist) is keyed by this id, and cleanup on destroy
+  // clears exactly this id — never a focused-window lookup, which could race.
+  const wcId = win.webContents.id
+
   if (isDev) {
-    mainWindow.loadURL(DEV_URL)
+    win.loadURL(DEV_URL)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
-  // Never let the window close unless the user is explicitly quitting (Cmd+Q). Any
-  // other close attempt (red traffic-light button, stray shortcut) hides the window
-  // instead of destroying it, so the app stays alive. Cmd+W is handled separately in
-  // the renderer and only closes tabs.
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+  // Close policy (D1): with more than one window open, a close request (red traffic-light
+  // button / Shift+Cmd+W) DESTROYS that window. The LAST remaining window instead HIDES,
+  // so the app never vanishes by accident — only Cmd+Q quits. Cmd+W is handled in the
+  // renderer and only closes tabs.
+  win.on('close', (event) => {
+    if (isQuitting) return // explicit quit → let every window close
+    const isLast = BrowserWindow.getAllWindows().length <= 1
+    if (isLast) {
       event.preventDefault()
-      mainWindow?.hide()
+      win.hide()
     }
+    // else: allow the close → 'closed' fires below and frees this window's state.
   })
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
+  win.on('closed', () => {
+    // Free this window's per-window state so the maps don't leak as windows come and go.
+    // Only reached on real destroy (not the hide path above).
+    ws.clearWorkspaceRoot(wcId)
+    clearLooseFiles(wcId)
   })
+
+  return win
+}
+
+// The window a menu command should act on: the focused window, captured at click time.
+function focusedWin() {
+  return BrowserWindow.getFocusedWindow()
+}
+
+// Send a menu event to the focused window's renderer. Captured once at call time — never
+// re-queried after async work (the event sender is the authority for fs identity; menu
+// focus only picks which renderer receives the event).
+function sendToFocused(channel, ...args) {
+  const { win, fresh } = targetWindow()
+  if (fresh) {
+    // A brand-new window's renderer hasn't subscribed to menu events yet; wait until it
+    // finishes loading before sending, or the message is lost.
+    win.webContents.once('did-finish-load', () => win.webContents.send(channel, ...args))
+  } else {
+    win.webContents.send(channel, ...args)
+  }
+}
+
+// Resolve the window a menu command should act on. Menu items stay enabled even when the
+// only window is HIDDEN (the last-window-hidden case from the D1 close policy), so we must
+// always return a real, visible window — otherwise commands like Open Recent silently
+// no-op. Preference: focused → any visible → reveal a hidden one → create a new one.
+// Returns { win, fresh } where `fresh` means the window was just created (renderer not
+// loaded yet) so callers must defer any send until it finishes loading.
+function targetWindow() {
+  const focused = focusedWin()
+  if (focused) return { win: focused, fresh: false }
+  const wins = BrowserWindow.getAllWindows()
+  const visible = wins.find((w) => w.isVisible())
+  if (visible) { visible.focus(); return { win: visible, fresh: false } }
+  const hidden = wins[0]
+  if (hidden) { hidden.show(); hidden.focus(); return { win: hidden, fresh: false } }
+  return { win: createWindow(), fresh: true }
 }
 
 // Block the renderer from navigating away or opening arbitrary URLs/external schemes.
@@ -120,10 +171,10 @@ function buildMenu(recentFolders = []) {
     ? [
         ...recentFolders.map((dir) => ({
           label: dir.replace(os.homedir(), '~'),
-          click: () => mainWindow?.webContents.send('menu:open-recent', dir),
+          click: () => sendToFocused('menu:open-recent', dir),
         })),
         { type: 'separator' },
-        { label: 'Clear Recently Opened', click: () => mainWindow?.webContents.send('menu:clear-recent') },
+        { label: 'Clear Recently Opened', click: () => sendToFocused('menu:clear-recent') },
       ]
     : [{ label: 'No Recent Folders', enabled: false }]
 
@@ -135,7 +186,7 @@ function buildMenu(recentFolders = []) {
         {
           label: 'Settings…',
           accelerator: 'CmdOrCtrl+,',
-          click: () => mainWindow?.webContents.send('menu:settings'),
+          click: () => sendToFocused('menu:settings'),
         },
         { type: 'separator' },
         { role: 'hide' },
@@ -148,33 +199,46 @@ function buildMenu(recentFolders = []) {
     {
       label: 'File',
       submenu: [
+        // New File (Cmd+N, untitled buffer) is deferred to a follow-up (plan D2) — it
+        // needs the untitled tab model + a Save-As IPC. New Window ships now.
+        {
+          label: 'New Window',
+          accelerator: 'Shift+CmdOrCtrl+N',
+          click: () => createWindow(),
+        },
+        { type: 'separator' },
         {
           label: 'Open File…',
           accelerator: 'CmdOrCtrl+O',
-          click: () => mainWindow?.webContents.send('menu:open-file'),
+          click: () => sendToFocused('menu:open-file'),
         },
         {
           label: 'Open Folder…',
           accelerator: 'Shift+CmdOrCtrl+O',
-          click: () => mainWindow?.webContents.send('menu:open-folder'),
+          click: () => sendToFocused('menu:open-folder'),
         },
         { label: 'Open Recent', submenu: recentSubmenu },
         {
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
-          click: () => mainWindow?.webContents.send('menu:save'),
+          click: () => sendToFocused('menu:save'),
         },
         { type: 'separator' },
         {
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
-          click: () => mainWindow?.webContents.send('menu:close-tab'),
+          click: () => sendToFocused('menu:close-tab'),
+        },
+        {
+          label: 'Close Window',
+          accelerator: 'Shift+CmdOrCtrl+W',
+          click: () => focusedWin()?.close(),
         },
         { type: 'separator' },
         {
           label: 'Split Editor',
           accelerator: 'CmdOrCtrl+\\',
-          click: () => mainWindow?.webContents.send('menu:split'),
+          click: () => sendToFocused('menu:split'),
         },
       ],
     },
@@ -185,17 +249,17 @@ function buildMenu(recentFolders = []) {
         {
           label: 'Quick Open…',
           accelerator: 'Cmd+P', // Cmd only — Ctrl+P is the editor's Emacs cursor-up
-          click: () => mainWindow?.webContents.send('menu:quick-open'),
+          click: () => sendToFocused('menu:quick-open'),
         },
         {
           label: 'Open Preview to the Side',
           accelerator: 'Shift+CmdOrCtrl+V',
-          click: () => mainWindow?.webContents.send('menu:preview-side'),
+          click: () => sendToFocused('menu:preview-side'),
         },
         {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
-          click: () => mainWindow?.webContents.send('menu:toggle-sidebar'),
+          click: () => sendToFocused('menu:toggle-sidebar'),
         },
         { type: 'separator' },
         { role: 'reload' },
@@ -214,8 +278,8 @@ function buildMenu(recentFolders = []) {
         { role: 'minimize' },
         { role: 'zoom' },
         { role: 'front' },
-        // Intentionally NO "Close" item — Cmd+W is reserved for closing tabs only,
-        // and the window/app must never close via Cmd+W.
+        // No "Close" role here — Cmd+W is reserved for closing tabs. Closing a WINDOW is
+        // File → Close Window (Shift+Cmd+W); the last window hides rather than closing.
       ],
     },
   ]
@@ -241,9 +305,14 @@ app.whenReady().then(() => {
   createWindow()
 
   app.on('activate', () => {
-    // Re-show the hidden window (or recreate it) when the dock icon is clicked.
-    if (mainWindow) mainWindow.show()
-    else if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Dock-icon click: if every window is hidden (the last-window-hidden case), re-show
+    // them; if there are none at all, create one.
+    const wins = BrowserWindow.getAllWindows()
+    if (wins.length === 0) {
+      createWindow()
+    } else {
+      for (const w of wins) if (!w.isVisible()) w.show()
+    }
   })
 })
 

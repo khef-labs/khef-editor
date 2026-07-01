@@ -146,8 +146,8 @@ async function searchWithWalk(root, query, opts) {
 function registerSearchIpc() {
   const rgPath = findRipgrep()
 
-  ipcMain.handle('fs:search', async (_event, query, options) => {
-    const root = ws.getWorkspaceRoot()
+  ipcMain.handle('fs:search', async (event, query, options) => {
+    const root = ws.getWorkspaceRoot(event.sender.id)
     if (!root) throw new Error('No workspace open')
     if (typeof query !== 'string' || query.length === 0) {
       return { files: [], total: 0, truncated: false }
@@ -167,8 +167,9 @@ function registerSearchIpc() {
   // Replace all occurrences of `query` with `replacement` across the workspace.
   // Writes directly to disk (undoable via git, like VS Code). Each target path is
   // confined to the workspace root before writing.
-  ipcMain.handle('fs:replaceAll', async (_event, query, replacement, options) => {
-    const root = ws.getWorkspaceRoot()
+  ipcMain.handle('fs:replaceAll', async (event, query, replacement, options) => {
+    const wcId = event.sender.id
+    const root = ws.getWorkspaceRoot(wcId)
     if (!root) throw new Error('No workspace open')
     if (typeof query !== 'string' || query.length === 0) {
       return { filesChanged: 0, replacements: 0 }
@@ -196,7 +197,7 @@ function registerSearchIpc() {
     let replacements = 0
     for (const fr of search.files) {
       let abs
-      try { abs = await ws.resolveExisting(fr.file) } catch { continue } // outside root → skip
+      try { abs = await ws.resolveExisting(wcId, fr.file) } catch { continue } // outside root → skip
       let content
       try { content = await fsp.readFile(abs, 'utf8') } catch { continue }
       let count = 0
