@@ -1,5 +1,35 @@
+# Dependencies & build
 node_modules/
 dist/
 dist-app/
-*.log
+
+# Environment
+.env
+.env~
+\#*#
+*~
+
+# IDE / OS
 .DS_Store
+
+# Logs
+*.log
+
+# Claude Code (user-private) + khef-generated
+CLAUDE.local.md
+AGENTS.local.md
+AGENTS.override.md
+KF-RULES.md
+KF-RULES-*.md
+.khef-rules/
+KF-PROJECT-KNOWLEDGE.md
+KF-PROJECT-KNOWLEDGE-*.md
+.khef-knowledge/
+.claude/*
+!.claude/skills/
+
+# Temp
+tmp/
+
+# Frontend
+.vite/
