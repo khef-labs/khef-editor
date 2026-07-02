@@ -458,9 +458,19 @@ export function App() {
     })))
   }, [])
 
+  // A file the OS asked us to open (Finder double-click / "Open With"), already read in
+  // main as a loose file. Open it as a detached (loose) tab — it may live outside any
+  // workspace root — and save back through the per-file loose-write gate.
+  const openLoosePayload = useCallback((payload: { path: string; content: string } | undefined) => {
+    if (!payload || typeof payload.path !== 'string') return
+    const name = payload.path.split('/').pop() ?? payload.path
+    void openPath(payload.path, name, { content: payload.content, loose: true })
+  }, [openPath])
+
   // Menu wiring (open-file / open-folder / save / close-tab / quick-open / settings / split).
   useEffect(() => {
     const offOpenFile = window.editorApi.onMenu('menu:open-file', () => void openFileViaDialog())
+    const offOpenLoose = window.editorApi.onMenu('menu:open-loose', (payload) => openLoosePayload(payload))
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => saveFocused())
     const offQuick = window.editorApi.onMenu('menu:quick-open', () => setQuickOpen((v) => !v))
@@ -471,8 +481,8 @@ export function App() {
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
     const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => { void window.editorApi.clearRecentFolders().then(setRecentFolders) })
-    return () => { offOpenFile(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
-  }, [openFileViaDialog, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
+    return () => { offOpenFile(); offOpenLoose(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
+  }, [openFileViaDialog, openLoosePayload, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)

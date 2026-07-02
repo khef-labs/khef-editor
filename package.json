@@ -71,6 +71,20 @@
       "target": [
         "dmg"
       ]
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md", "markdown", "mdx", "txt", "text", "log",
+          "js", "jsx", "ts", "tsx", "mjs", "cjs",
+          "json", "jsonc", "css", "scss", "less", "html", "htm", "xml", "svg",
+          "py", "rb", "go", "rs", "java", "c", "h", "cpp", "hpp", "cs",
+          "sh", "bash", "zsh", "yml", "yaml", "toml", "ini", "conf", "env",
+          "sql", "graphql", "vue", "svelte", "mmd"
+        ],
+        "name": "Text Document",
+        "role": "Editor"
+      }
+    ]
   }
 }

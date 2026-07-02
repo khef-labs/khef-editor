@@ -35,6 +35,23 @@ function clearLooseFiles(wcId) {
   looseFilesByWindow.delete(wcId)
 }
 
+// Read a trusted OS-provided file path as a loose file for a specific window: realpath +
+// size-cap it, record it in that window's loose allowlist, and return the payload the
+// renderer needs to open a loose tab. The path must come from a TRUSTED source (the OS
+// open-file event or native dialog) — never a raw renderer string. Throws on non-file /
+// too-large / missing.
+async function readLooseFileForWindow(wcId, filePath) {
+  const real = await fsp.realpath(filePath)
+  const st = await fsp.stat(real)
+  if (!st.isFile()) throw new Error('Not a file')
+  if (st.size > MAX_FILE_SIZE) {
+    throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
+  }
+  const content = await fsp.readFile(real, 'utf8')
+  looseSet(wcId).add(real)
+  return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
+}
+
 // Directories the tree walk skips (perf + leak-surface). Mirrors khef's ignore set.
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', '.hg', '.svn', '__pycache__',
@@ -148,15 +165,7 @@ function registerFsIpc() {
     if (!win) throw new Error('Window is gone')
     const result = await dialog.showOpenDialog(win, { properties: ['openFile'] })
     if (result.canceled || result.filePaths.length === 0) return null
-    const real = await fsp.realpath(result.filePaths[0])
-    const st = await fsp.stat(real)
-    if (!st.isFile()) throw new Error('Not a file')
-    if (st.size > MAX_FILE_SIZE) {
-      throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
-    }
-    const content = await fsp.readFile(real, 'utf8')
-    looseSet(wcId).add(real)
-    return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
+    return readLooseFileForWindow(wcId, result.filePaths[0])
   })
 
   // Write back a loose file. Only permitted for a realpath the user actually opened
@@ -248,4 +257,4 @@ function registerFsIpc() {
   })
 }
 
-module.exports = { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, MAX_FILE_SIZE, IGNORED_DIRS }
+module.exports = { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, readLooseFileForWindow, MAX_FILE_SIZE, IGNORED_DIRS }

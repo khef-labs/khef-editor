@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent', 'menu:open-loose'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace

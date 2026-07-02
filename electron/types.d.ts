@@ -142,7 +142,16 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose'
+
+// Payload for menu:open-loose — a file the OS asked us to open (Finder double-click),
+// already read in main as a loose file.
+export interface LooseOpenPayload {
+  path: string
+  content: string
+  mtimeMs: number
+  size: number
+}
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
@@ -161,6 +170,7 @@ export interface EditorApi {
   recentFolders(): Promise<string[]>
   clearRecentFolders(): Promise<string[]>
   git: GitApi
+  onMenu(channel: 'menu:open-loose', handler: (payload: LooseOpenPayload) => void): () => void
   onMenu(channel: MenuChannel, handler: (...args: string[]) => void): () => void
 }
 

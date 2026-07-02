@@ -8,7 +8,7 @@
 const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
-const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles } = require('./fs-ipc.cjs')
+const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, readLooseFileForWindow } = require('./fs-ipc.cjs')
 const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
@@ -94,6 +94,47 @@ function sendToFocused(channel, ...args) {
     win.webContents.send(channel, ...args)
   }
 }
+
+// --- Finder "Open With" / file-association handling ---
+// When a file is double-clicked in Finder (or `open -a "Khef Editor" file.md`), macOS
+// sends app.on('open-file'). On a COLD launch this fires BEFORE app is ready, so we buffer
+// paths until the app + a window are ready, then open them. Files opened this way live
+// anywhere on disk, so they go through the LOOSE-file path (read in main, pushed to the
+// renderer as a detached tab) — never the workspace-confined read.
+let appReady = false
+const pendingOpenFiles = []
+
+// Read `filePath` as a loose file for a target window and push it to that renderer. Picks
+// the focused/visible window (revealing a hidden one), creating one if none exist.
+async function openOsFile(filePath) {
+  const { win, fresh } = targetWindow()
+  const wcId = win.webContents.id
+  try {
+    const payload = await readLooseFileForWindow(wcId, filePath)
+    const send = () => win.webContents.send('menu:open-loose', payload)
+    if (fresh || win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', send)
+    } else {
+      send()
+    }
+    win.show()
+    win.focus()
+  } catch {
+    // Non-file, too large, or unreadable — silently ignore (matches the loose-file dialog).
+  }
+}
+
+// Queue a path if the app/window isn't ready yet, else open it now.
+function handleOpenFile(filePath) {
+  if (!appReady) { pendingOpenFiles.push(filePath); return }
+  void openOsFile(filePath)
+}
+
+// Register at top level so a cold-launch open-file (fired before whenReady) is captured.
+app.on('open-file', (event, filePath) => {
+  event.preventDefault()
+  handleOpenFile(filePath)
+})
 
 // Resolve the window a menu command should act on. Menu items stay enabled even when the
 // only window is HIDDEN (the last-window-hidden case from the D1 close policy), so we must
@@ -303,6 +344,13 @@ app.whenReady().then(() => {
   setRecentChangeHandler(() => void refreshMenu())
   void refreshMenu()
   createWindow()
+
+  // App + first window are up: drain any files Finder asked us to open during cold launch.
+  appReady = true
+  if (pendingOpenFiles.length) {
+    const files = pendingOpenFiles.splice(0)
+    for (const f of files) void openOsFile(f)
+  }
 
   app.on('activate', () => {
     // Dock-icon click: if every window is hidden (the last-window-hidden case), re-show
