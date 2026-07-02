@@ -422,6 +422,7 @@ html, body, #app {
 
 /* Editor body */
 .editor-body { flex: 1; min-height: 0; position: relative; }
+.cm-host-wrap { position: absolute; inset: 0; }
 .cm-host { position: absolute; inset: 0; }
 .editor-empty {
   position: relative;
@@ -516,6 +517,102 @@ html, body, #app {
 /* CodeMirror tweaks to sit flush in the pane */
 .cm-editor { height: 100%; position: relative; }
 .cm-editor.cm-focused { outline: none; }
+
+/* ── In-editor Find/Replace widget (VS Code-style floating card) ─────────────── */
+.cm-find-widget {
+  position: absolute;
+  top: 6px;
+  right: 18px; /* clear of the scrollbar lane */
+  z-index: 20;
+  display: flex;
+  align-items: stretch; /* let the expander span the full widget height */
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated, #252526);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.find-expander {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch; /* fill the widget height (grows with the replace row) */
+  width: 26px;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.find-expander:hover { background: var(--row-hover); color: var(--fg); }
+.find-expander svg { width: 18px; height: 18px; }
+.find-rows { display: flex; flex-direction: column; gap: 3px; }
+.find-row { display: flex; align-items: center; gap: 4px; }
+.find-input-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input, #3c3c3c);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0 2px 0 6px;
+  height: 26px;
+  min-width: 220px;
+}
+.find-input-wrap:focus-within { border-color: var(--accent); }
+.find-input-wrap.invalid { border-color: var(--error, #f14c4c); }
+.find-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+}
+.find-input::placeholder { color: var(--fg-dim); }
+.find-toggles { display: inline-flex; align-items: center; gap: 1px; }
+.find-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  width: 20px;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.find-toggle:hover:not(:disabled) { background: var(--row-hover); color: var(--fg); }
+.find-toggle.active { background: var(--accent-subtle, rgba(0, 122, 204, 0.4)); color: var(--fg-bright); }
+.find-toggle:disabled { opacity: 0.4; cursor: default; }
+.find-glyph { font-size: 11px; font-weight: 600; line-height: 1; }
+.find-count {
+  min-width: 66px;
+  padding: 0 4px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.find-actions { display: inline-flex; align-items: center; gap: 1px; }
+.find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  width: 24px;
+  border: none;
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.find-btn:hover:not(:disabled) { background: var(--row-hover); color: var(--fg); }
+.find-btn.active { background: var(--accent-subtle, rgba(0, 122, 204, 0.4)); color: var(--fg-bright); }
+.find-btn:disabled { opacity: 0.35; cursor: default; }
 /* Overview-ruler cursor marker: a short tick on the right edge marking where the cursor
    line sits in the document (like VS Code's scrollbar cursor marker). */
 .cm-cursor-overview {
@@ -613,13 +710,14 @@ html, body, #app {
 .search-body { display: flex; align-items: stretch; padding: 2px 10px 6px 2px; gap: 4px; }
 .search-replace-toggle {
   flex: 0 0 auto;
-  width: 22px;
+  width: 26px;
   align-self: stretch;
   background: none; border: none;
   color: var(--fg); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 .search-replace-toggle:hover { color: var(--fg-bright); background: var(--row-hover); border-radius: 4px; }
+.search-replace-toggle svg { width: 18px; height: 18px; }
 .search-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 
 .search-field {

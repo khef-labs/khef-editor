@@ -1,7 +1,13 @@
-import { useEffect, useRef } from 'preact/hooks'
-import { EditorState, Compartment, EditorSelection, Prec, Annotation } from '@codemirror/state'
-import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
+import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
+import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction } from '@codemirror/state'
+import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
+import {
+  search, setSearchQuery, SearchQuery, findNext, findPrevious, replaceNext, replaceAll,
+  openSearchPanel, closeSearchPanel,
+} from '@codemirror/search'
+import { FindWidget } from './FindWidget'
+import { computeMatchState, type MatchRange } from '../lib/findMatches'
 import {
   defaultKeymap, history, historyKeymap, indentWithTab, undo, redo,
   cursorCharForward, cursorCharBackward, cursorLineUp, cursorLineDown,
@@ -10,7 +16,7 @@ import {
   selectCharForward, selectCharBackward, selectLineUp, selectLineDown,
   selectLineStart, selectLineEnd, selectGroupForward, selectGroupBackward,
 } from '@codemirror/commands'
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
+import { highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { languageForFilename } from '../lib/language'
 import { editorThemeExtension } from '../lib/editorTheme'
@@ -84,6 +90,18 @@ interface CodeEditorProps {
 // sync) so the update listener can distinguish it from a genuine user edit.
 const ProgrammaticDoc = Annotation.define<boolean>()
 
+// A hidden CodeMirror search panel. We render our OWN floating find widget, but CM's
+// native match highlighting (.cm-searchMatch) only draws when the search panel STATE is
+// open (searchHighlighter returns no decorations when panel is null). So we install
+// search() with this empty, display:none panel and open it behind our widget — the user
+// never sees it, but the highlights work. (plan-find-widget, lissy finding #1.)
+function hiddenSearchPanel() {
+  const dom = document.createElement('div')
+  dom.className = 'cm-hidden-search-panel'
+  dom.style.display = 'none'
+  return { dom, top: true }
+}
+
 type CMCommand = (view: EditorView) => boolean
 
 // Emacs kill ring — shared across all editors (like Emacs), mirroring khef's editor.
@@ -115,6 +133,124 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   onUserEditRef.current = onUserEdit
   // Emacs "mark" (set with C-Space): when active, motion commands extend the selection.
   const markActiveRef = useRef(false)
+
+  // --- In-editor Find/Replace widget state (VS Code-style). ---
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findReplace, setFindReplace] = useState('')
+  const [findCase, setFindCase] = useState(false)
+  const [findWord, setFindWord] = useState(false)
+  const [findRegex, setFindRegex] = useState(false)
+  const [findInSelection, setFindInSelection] = useState(false)
+  const [replaceExpanded, setReplaceExpanded] = useState(false)
+  const [matchState, setMatchState] = useState<{ current: number; total: number; invalid: boolean }>({ current: 0, total: 0, invalid: false })
+  // The frozen scope range when "find in selection" is on (captured once, not the live
+  // selection — findNext collapses the selection to the match, which would shrink scope).
+  const scopeRef = useRef<MatchRange | null>(null)
+  // The last NON-EMPTY selection the user made in the editor. Tracked live via the update
+  // listener so "find in selection" can scope to it even after focus moved to the Find
+  // input (which collapses the editor's live selection). Cleared when a match is selected
+  // by find nav so it reflects a real user range, not a search hit.
+  const lastSelectionRef = useRef<MatchRange | null>(null)
+
+  // Push the current find query/flags into CodeMirror and recompute the match count.
+  const applyQuery = useCallback((opts?: { query?: string; caseSensitive?: boolean; wholeWord?: boolean; regexp?: boolean }) => {
+    const view = viewRef.current
+    if (!view) return
+    const q = opts?.query ?? findQuery
+    const cs = opts?.caseSensitive ?? findCase
+    const ww = opts?.wholeWord ?? findWord
+    const re = opts?.regexp ?? findRegex
+    const scope = scopeRef.current
+    const test = scope
+      ? (_m: string, _s: EditorState, from: number, to: number) => from >= scope.from && to <= scope.to
+      : undefined
+    view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: q, caseSensitive: cs, wholeWord: ww, regexp: re, replace: findReplace, test })) })
+    const sel = view.state.selection.main
+    const state = computeMatchState(view.state.doc.toString(), q, { caseSensitive: cs, wholeWord: ww, regexp: re }, { from: sel.from, to: sel.to }, scope)
+    setMatchState(state)
+  }, [findQuery, findReplace, findCase, findWord, findRegex])
+
+  // Recompute the "N of M" label (e.g. after nav moves the selection).
+  const recount = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    const sel = view.state.selection.main
+    const state = computeMatchState(view.state.doc.toString(), findQuery, { caseSensitive: findCase, wholeWord: findWord, regexp: findRegex }, { from: sel.from, to: sel.to }, scopeRef.current)
+    setMatchState(state)
+  }, [findQuery, findCase, findWord, findRegex])
+
+  // Open the find widget. `withReplace` expands the replace row. Seeds the query from a
+  // single-line selection; auto-enables find-in-selection (frozen range) for a multi-line one.
+  const openFind = useCallback((withReplace: boolean) => {
+    const view = viewRef.current
+    if (!view) return
+    openSearchPanel(view) // opens the HIDDEN panel state so native highlights draw
+    const sel = view.state.selection.main
+    const selText = view.state.sliceDoc(sel.from, sel.to)
+    // Remember the selection so the `≡` toggle can scope to it after focus leaves the editor.
+    lastSelectionRef.current = sel.empty ? lastSelectionRef.current : { from: sel.from, to: sel.to }
+    const multiLine = selText.includes('\n')
+    if (multiLine) {
+      // Multi-line selection → auto-enable find-in-selection with the frozen range.
+      scopeRef.current = { from: sel.from, to: sel.to }
+      setFindInSelection(true)
+    } else {
+      scopeRef.current = null
+      setFindInSelection(false)
+      if (selText.length > 0) setFindQuery(selText) // single-line → prefill the query
+    }
+    if (withReplace) setReplaceExpanded(true)
+    setFindOpen(true)
+  }, [])
+  const openFindRef = useRef(openFind)
+  openFindRef.current = openFind
+
+  const closeFind = useCallback(() => {
+    const view = viewRef.current
+    setFindOpen(false)
+    scopeRef.current = null
+    setFindInSelection(false)
+    if (view) { closeSearchPanel(view); view.focus() }
+  }, [])
+
+  // Re-apply the query whenever it or the flags change while the widget is open.
+  useEffect(() => {
+    if (findOpen) applyQuery()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findOpen, findQuery, findCase, findWord, findRegex, findReplace, findInSelection])
+
+  const runFindNext = useCallback(() => { const v = viewRef.current; if (v) { findNext(v); recount() } }, [recount])
+  const runFindPrev = useCallback(() => { const v = viewRef.current; if (v) { findPrevious(v); recount() } }, [recount])
+  const runReplaceOne = useCallback(() => { const v = viewRef.current; if (v) { replaceNext(v); recount() } }, [recount])
+  const runReplaceAll = useCallback(() => { const v = viewRef.current; if (v) { replaceAll(v); recount() } }, [recount])
+
+  const toggleInSelection = useCallback(() => {
+    if (scopeRef.current) {
+      // Turn it off → back to whole-document search.
+      scopeRef.current = null
+      setFindInSelection(false)
+    } else {
+      // Turn it on → scope to the last real user selection (captured live, since focus is
+      // now in the Find input and the editor's selection is collapsed).
+      const remembered = lastSelectionRef.current
+      if (remembered && remembered.from !== remembered.to) {
+        scopeRef.current = { ...remembered }
+        setFindInSelection(true)
+      }
+    }
+    applyQuery()
+  }, [applyQuery])
+
+  const onFindKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? runFindPrev() : runFindNext() }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+  }, [runFindNext, runFindPrev, closeFind])
+
+  const onReplaceKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); runReplaceOne() }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+  }, [runReplaceOne, closeFind])
 
   // Build the Emacs keybinding extension. Mirrors khef's editor: mark + region, kill ring
   // (C-k / C-w / C-y), open line (C-o), readline motion (C-f/b/p/n/a/e), word motion
@@ -243,18 +379,28 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         highlightActiveLineGutter(),
         highlightActiveLine(),
         cursorOverviewMarker,
+        // Render selection as a CM layer (not native), so it stays visible when the editor
+        // is blurred — e.g. while focus is in the Find widget. Styled to persist below.
+        drawSelection(),
         EditorView.lineWrapping,
         history(),
         foldGutter(),
         indentOnInput(),
         bracketMatching(),
         highlightSelectionMatches(),
+        // Search state + native highlighting. The panel is hidden; we drive it from our
+        // own floating FindWidget. Include search() BEFORE the keymap so its state exists.
+        search({ createPanel: hiddenSearchPanel }),
         keymap.of([
           { key: 'Mod-s', run: () => { onSaveRef.current(); return true } },
+          // Our Cmd+F opens the custom find widget (and the hidden panel behind it). We do
+          // NOT spread ...searchKeymap, so CM's default Mod-f panel never appears; the
+          // find/replace nav commands are dispatched by the widget instead.
+          { key: 'Mod-f', run: () => { openFindRef.current(false); return true } },
+          { key: 'Mod-Alt-f', run: () => { openFindRef.current(true); return true } },
           indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
-          ...searchKeymap,
           ...foldKeymap,
         ]),
         languageComp.current.of(languageForFilename(filename)),
@@ -269,6 +415,20 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
             const programmatic = u.transactions.some((t) => t.annotation(ProgrammaticDoc))
             if (!programmatic) onUserEditRef.current?.()
           }
+          // Track the last NON-EMPTY user selection so "find in selection" can scope to it
+          // even after focus moves to the Find input. Ignore selections created by search
+          // navigation (findNext/replace select a match) — those carry a "select.search"
+          // userEvent — so the remembered range stays a real user selection.
+          if (u.selectionSet) {
+            const fromSearch = u.transactions.some((t) => {
+              const ue = t.annotation(Transaction.userEvent)
+              return ue != null && ue.startsWith('select.search')
+            })
+            const main = u.state.selection.main
+            if (!fromSearch && !main.empty) {
+              lastSelectionRef.current = { from: main.from, to: main.to }
+            }
+          }
         }),
         EditorView.theme({
           '&': { height: '100%', fontSize: '13px' },
@@ -276,6 +436,12 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
             fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",
             overflow: 'auto',
           },
+          // Keep the selection visible when the editor is BLURRED (e.g. focus is in the Find
+          // widget). drawSelection() hides .cm-selectionBackground on blur by default; force
+          // it to persist (a touch dimmer than the focused selection, like VS Code). The
+          // package themes vary, so use !important to win.
+          '.cm-selectionBackground': { backgroundColor: 'var(--selection, #264f78) !important' },
+          '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection-focused, #2f6099) !important' },
           // Force a persistent (non-overlay) scrollbar. Styling ::-webkit-scrollbar with
           // an explicit width + non-overlay appearance keeps it from fading like the macOS
           // overlay scrollbar. Do NOT also set scrollbar-color — that re-enables overlay.
@@ -369,5 +535,37 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     view.focus()
   }, [gotoLine?.token])
 
-  return <div class="cm-host" ref={hostRef} />
+  return (
+    <div class="cm-host-wrap">
+      {findOpen && (
+        <FindWidget
+          query={findQuery}
+          replace={findReplace}
+          caseSensitive={findCase}
+          wholeWord={findWord}
+          regexp={findRegex}
+          inSelection={findInSelection}
+          replaceExpanded={replaceExpanded}
+          current={matchState.current}
+          total={matchState.total}
+          invalid={matchState.invalid}
+          onQuery={setFindQuery}
+          onReplace={setFindReplace}
+          onToggleCase={() => setFindCase((v) => !v)}
+          onToggleWord={() => setFindWord((v) => !v)}
+          onToggleRegex={() => setFindRegex((v) => !v)}
+          onToggleInSelection={toggleInSelection}
+          onToggleReplaceExpanded={() => setReplaceExpanded((v) => !v)}
+          onNext={runFindNext}
+          onPrev={runFindPrev}
+          onReplaceOne={runReplaceOne}
+          onReplaceAll={runReplaceAll}
+          onClose={closeFind}
+          onFindKeyDown={onFindKeyDown}
+          onReplaceKeyDown={onReplaceKeyDown}
+        />
+      )}
+      <div class="cm-host" ref={hostRef} />
+    </div>
+  )
 }
