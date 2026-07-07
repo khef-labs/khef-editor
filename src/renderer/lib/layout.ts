@@ -23,6 +23,10 @@ export interface OpenTab {
   // adding a tab. Cleared (promoted to a permanent tab) by double-clicking the file/tab or
   // editing the file. Only ever set on plain editor tabs — never on kind:'preview'/'diff'.
   ephemeral?: boolean
+  // A new unsaved buffer (Cmd+N). Its `path` is a synthetic `untitled:N` id (unique per
+  // window). First Save opens a native Save dialog; the tab then adopts the real path and
+  // drops this flag. Never ephemeral, never loose while untitled.
+  untitled?: boolean
 }
 
 export interface LeafNode {

@@ -14,6 +14,8 @@ export interface OpenTab {
   // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Only set
   // on plain editor tabs (never kind:'preview'/'diff').
   ephemeral?: boolean
+  // New unsaved buffer (Cmd+N). Kept in sync with layout.ts's OpenTab.
+  untitled?: boolean
 }
 
 export interface EditorGroup {

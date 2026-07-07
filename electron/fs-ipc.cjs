@@ -8,6 +8,7 @@
 const { ipcMain, dialog, BrowserWindow } = require('electron')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
+const os = require('node:os')
 const ws = require('./workspace.cjs')
 const { addRecentFolder } = require('./settings.cjs')
 
@@ -63,6 +64,25 @@ function assertString(value, name) {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${name} must be a non-empty string`)
   }
+}
+
+// Sanitize a renderer-supplied filename LABEL for use as a Save dialog default. Strips any
+// path components / NUL, caps length, falls back to "Untitled". Never trusted as a path.
+function sanitizeName(suggested) {
+  let name = path.basename(String(suggested || '')).replace(/\0/g, '').trim()
+  if (name.length > 255) name = name.slice(0, 255)
+  return name.length ? name : 'Untitled'
+}
+
+// True when `candidate` is lexically under `root` (not the root itself, no `..` escape).
+// PURELY lexical (no realpath): a path lexically under the root is routed to the confined
+// ws.resolveForWrite, which realpaths and REJECTS symlink escapes. That is why the lexical
+// test here must NOT resolve intermediate symlinks — doing so would let `repo/link/evil.txt`
+// (link → outside) classify as "outside" and get a silent direct write. Lexically it is
+// under root, so it goes to resolveForWrite and fails, per the security review (lissy #1).
+function isLexicallyUnder(root, candidate) {
+  const rel = path.relative(root, candidate)
+  return rel.length > 0 && !rel.startsWith('..') && !path.isAbsolute(rel)
 }
 
 /**
@@ -187,6 +207,53 @@ function registerFsIpc() {
     await fsp.writeFile(real, content, 'utf8')
     const st = await fsp.stat(real)
     return { path: real, mtimeMs: st.mtimeMs, size: st.size }
+  })
+
+  // Save an untitled buffer to a user-chosen location. The renderer NEVER supplies the
+  // final path — main opens the native Save dialog and decides how to write based on where
+  // the user picks:
+  //   - lexically UNDER this window's workspace root → must succeed via the confined
+  //     resolveForWrite (which realpaths and rejects symlink escapes). If it rejects, the
+  //     save FAILS — we never fall back to a direct write (that would let an in-repo symlink
+  //     escape the root).
+  //   - NOT under the root (or no workspace open) → write directly and record the
+  //     post-write realpath in this window's loose allowlist, so later saves go through
+  //     fs:writeLooseFile.
+  ipcMain.handle('fs:saveAs', async (event, content, suggestedName) => {
+    const wcId = event.sender.id
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('Window is gone')
+    if (typeof content !== 'string') throw new Error('content must be a string')
+    if (Buffer.byteLength(content, 'utf8') > MAX_FILE_SIZE) {
+      throw new Error('Content exceeds max file size')
+    }
+    const safeName = sanitizeName(suggestedName)
+    const root = ws.getWorkspaceRoot(wcId)
+    const defaultPath = root ? path.join(root, safeName) : path.join(os.homedir(), safeName)
+
+    const result = await dialog.showSaveDialog(win, { defaultPath })
+    if (result.canceled || !result.filePath) return null
+    const selected = result.filePath
+
+    if (root && isLexicallyUnder(root, selected)) {
+      // Under the workspace lexically → MUST go through the confined write. resolveForWrite
+      // realpaths the nearest existing ancestor and rejects anything resolving outside; if
+      // it throws we let it propagate (save fails), never writing outside.
+      const target = await ws.resolveForWrite(wcId, selected)
+      await fsp.mkdir(path.dirname(target), { recursive: true })
+      await fsp.writeFile(target, content, 'utf8')
+      const st = await fsp.stat(target)
+      return { path: target, name: path.basename(target), mtimeMs: st.mtimeMs, size: st.size, loose: false }
+    }
+
+    // Outside the root (or no workspace) → direct write, then allowlist the realpath so
+    // subsequent saves use the loose-write gate.
+    await fsp.mkdir(path.dirname(selected), { recursive: true })
+    await fsp.writeFile(selected, content, 'utf8')
+    const real = await fsp.realpath(selected)
+    looseSet(wcId).add(real)
+    const st = await fsp.stat(real)
+    return { path: real, name: path.basename(real), mtimeMs: st.mtimeMs, size: st.size, loose: true }
   })
 
   ipcMain.handle('ws:current', async (event) => {

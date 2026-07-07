@@ -142,7 +142,17 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose'
+
+// Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
+// the file was written outside the workspace root (subsequent saves go through the loose gate).
+export interface SaveAsResult {
+  path: string
+  name: string
+  mtimeMs: number
+  size: number
+  loose: boolean
+}
 
 // Payload for menu:open-loose — a file the OS asked us to open (Finder double-click),
 // already read in main as a loose file.
@@ -160,6 +170,7 @@ export interface EditorApi {
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>
   writeLooseFile(filePath: string, content: string): Promise<WriteFileResult>
+  saveAs(content: string, suggestedName: string): Promise<SaveAsResult | null>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>
   search(query: string, options?: SearchOptions): Promise<SearchResult>

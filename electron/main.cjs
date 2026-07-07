@@ -240,8 +240,11 @@ function buildMenu(recentFolders = []) {
     {
       label: 'File',
       submenu: [
-        // New File (Cmd+N, untitled buffer) is deferred to a follow-up (plan D2) — it
-        // needs the untitled tab model + a Save-As IPC. New Window ships now.
+        {
+          label: 'New File',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendToFocused('menu:new-file'),
+        },
         {
           label: 'New Window',
           accelerator: 'Shift+CmdOrCtrl+N',

@@ -237,6 +237,21 @@ export function App() {
     })))
   }, [])
 
+  // Cmd+N — a new empty Untitled-N buffer in the focused leaf. Editable immediately; first
+  // Save opens a native Save dialog (see saveTab) and the tab adopts the chosen path.
+  const newUntitled = useCallback(() => {
+    const leafId = activeLeafIdRef.current
+    const n = ++untitledSeq.current
+    const tab: OpenTab = {
+      path: `untitled:${n}`,
+      name: `Untitled-${n}`,
+      content: '',
+      savedContent: '',
+      untitled: true,
+    }
+    setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, tabs: [...l.tabs, tab], activePath: tab.path })))
+  }, [])
+
   // Open a single file via native dialog as a loose tab — does NOT change the workspace
   // root or the tree. The file is read in main (it may live outside any root) and opens
   // as a detached tab that saves back through the per-file loose-write gate.
@@ -309,10 +324,52 @@ export function App() {
   }, [])
 
   const saveTab = useCallback(async (leafId: string, path: string) => {
-    const leaf = findLeaf(tree, leafId)
+    const leaf = findLeaf(treeRef.current, leafId)
     const tab = leaf?.tabs.find((t) => t.path === path)
     if (!tab) return
-    if (tab.kind === 'preview') return // previews are read-only
+    if (tab.kind === 'preview' || tab.kind === 'diff') return // read-only tabs
+
+    // Untitled buffer → Save-As. Main owns the dialog + the confined/loose write decision;
+    // the renderer never supplies the final path.
+    if (tab.untitled) {
+      const writtenContent = tab.content // exactly what we send to disk
+      try {
+        const res = await window.editorApi.saveAs(writtenContent, tab.name)
+        if (!res) return // user canceled → stays untitled
+        setTree((prev) => {
+          // Re-find the untitled tab by its synthetic path; it may have been closed.
+          const target = findLeaf(prev, leafId)?.tabs.find((t) => t.path === path)
+          if (!target) return prev
+          // If the chosen path is ALREADY open in this leaf, merge: drop the untitled tab
+          // and activate the existing one (avoid two tabs sharing one path identity).
+          const dup = findLeaf(prev, leafId)?.tabs.find((t) => t.path === res.path && t.path !== path)
+          if (dup) {
+            let next = updateLeaf(prev, leafId, (l) => ({
+              ...l, tabs: l.tabs.filter((t) => t.path !== path), activePath: res.path,
+            }))
+            // Update the existing tab's content everywhere to the just-written content.
+            next = mapLeaves(next, (l) => ({
+              ...l, tabs: l.tabs.map((t) => (t.path === res.path ? { ...t, content: writtenContent, savedContent: writtenContent } : t)),
+            }))
+            return next
+          }
+          // Adopt the real path in place. If the user typed during the dialog, keep their
+          // current content and leave the tab dirty (savedContent = what was written).
+          return updateLeaf(prev, leafId, (l) => ({
+            ...l,
+            tabs: l.tabs.map((t) => (t.path === path
+              ? { ...t, path: res.path, name: res.name, untitled: undefined, loose: res.loose || undefined, savedContent: writtenContent }
+              : t)),
+            activePath: l.activePath === path ? res.path : l.activePath,
+          }))
+        })
+        setScmRefresh((n) => n + 1)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+      return
+    }
+
     try {
       if (tab.loose) {
         await window.editorApi.writeLooseFile(tab.path, tab.content)
@@ -327,7 +384,7 @@ export function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [tree])
+  }, [])
 
   // Close a tab in a leaf. Closing the LAST tab removes the pane (collapses the split),
   // like VS Code — except the final remaining pane is kept (empty). Never closes the
@@ -371,6 +428,10 @@ export function App() {
   // async read aborts if its token is superseded, preventing stale reads from clobbering
   // the tab during rapid single-clicks or click→double-click races.
   const openTokens = useRef<Map<string, number>>(new Map())
+  // Monotonic counter for Untitled-N buffer names/paths (per window — each renderer has its
+  // own instance). Keyed off the counter, not the visible name, so closed untitled tabs
+  // never cause synthetic-path collisions.
+  const untitledSeq = useRef(0)
 
   // --- Pane operations (Emacs chords) ---
 
@@ -470,6 +531,7 @@ export function App() {
   // Menu wiring (open-file / open-folder / save / close-tab / quick-open / settings / split).
   useEffect(() => {
     const offOpenFile = window.editorApi.onMenu('menu:open-file', () => void openFileViaDialog())
+    const offNewFile = window.editorApi.onMenu('menu:new-file', () => newUntitled())
     const offOpenLoose = window.editorApi.onMenu('menu:open-loose', (payload) => openLoosePayload(payload))
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => saveFocused())
@@ -481,8 +543,8 @@ export function App() {
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
     const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => { void window.editorApi.clearRecentFolders().then(setRecentFolders) })
-    return () => { offOpenFile(); offOpenLoose(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
-  }, [openFileViaDialog, openLoosePayload, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
