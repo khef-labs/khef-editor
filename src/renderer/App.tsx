@@ -53,44 +53,46 @@ export function App() {
     void window.editorApi.recentFolders().then(setRecentFolders)
   }, [])
 
-  // Sidebar resize drag. Below COLLAPSE_AT the sidebar snaps closed (VS Code-style);
-  // it can't be shrunk to a sliver — it's either >= MIN_W or hidden.
+  // Sidebar resize drag. Dragging clamps width to [MIN_W, MAX_W] and NEVER fully closes the
+  // sidebar (a click on the border used to collapse it — that was the bug). Full close is
+  // Cmd+B only. A sub-threshold move is treated as a click and does nothing.
   const MIN_W = 170
-  const COLLAPSE_AT = 120
   const MAX_W = 700
+  const DRAG_THRESHOLD = 4 // px of movement before a click counts as a drag
   const startSidebarDrag = useCallback((e: PointerEvent) => {
     e.preventDefault()
     const handle = e.currentTarget as HTMLElement
     handle.setPointerCapture(e.pointerId)
-    handle.classList.add('dragging')
     const startX = e.clientX
-    // When collapsed, the visible width is 0, so grow from there as the user drags right.
-    const startW = sidebarCollapsed ? 0 : sidebarWidth
-    let collapsed = sidebarCollapsed
-    let width = sidebarCollapsed ? sidebarWidth : sidebarWidth
+    // When collapsed, dragging the (0-width) border re-opens the sidebar from MIN_W.
+    const startW = sidebarCollapsed ? MIN_W : sidebarWidth
+    let width = startW
+    let dragging = false
     const onMove = (ev: PointerEvent) => {
-      const raw = startW + (ev.clientX - startX)
-      if (raw < COLLAPSE_AT) {
-        collapsed = true
-        setSidebarCollapsed(true)
-      } else {
-        collapsed = false
-        width = Math.max(MIN_W, Math.min(MAX_W, raw))
-        setSidebarCollapsed(false)
-        setSidebarWidth(width)
+      // Ignore sub-threshold movement so a plain click on the border does nothing (it used
+      // to collapse the sidebar). Dragging NEVER fully closes it — width is clamped to
+      // [MIN_W, MAX_W]; full close is Cmd+B only (VS Code behavior).
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD) return
+        dragging = true
+        handle.classList.add('dragging')
+        if (sidebarCollapsed) setSidebarCollapsed(false) // a real drag re-opens a closed sidebar
       }
+      const raw = startW + (ev.clientX - startX)
+      width = Math.max(MIN_W, Math.min(MAX_W, raw))
+      setSidebarWidth(width)
     }
     const onUp = (ev: PointerEvent) => {
       handle.releasePointerCapture(ev.pointerId)
       handle.classList.remove('dragging')
       handle.removeEventListener('pointermove', onMove)
       handle.removeEventListener('pointerup', onUp)
-      // Persist width only when not collapsed; keep last width to restore on reopen.
-      if (!collapsed) void window.editorApi.setSettings({ sidebarWidth: Math.round(width) })
+      // Persist only if an actual drag happened (a bare click leaves state untouched).
+      if (dragging) void window.editorApi.setSettings({ sidebarWidth: Math.round(width) })
     }
     handle.addEventListener('pointermove', onMove)
     handle.addEventListener('pointerup', onUp)
-  }, [sidebarWidth])
+  }, [sidebarWidth, sidebarCollapsed])
 
   // Clicking an activity-bar view icon: open that view, or toggle collapse if it's the
   // already-active view (VS Code behavior).
