@@ -440,8 +440,8 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
           // widget). drawSelection() hides .cm-selectionBackground on blur by default; force
           // it to persist (a touch dimmer than the focused selection, like VS Code). The
           // package themes vary, so use !important to win.
-          '.cm-selectionBackground': { backgroundColor: 'var(--selection, #264f78) !important' },
-          '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection-focused, #2f6099) !important' },
+          '.cm-selectionBackground': { backgroundColor: 'var(--selection, #27678260) !important' },
+          '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection-focused, #276782dd) !important' },
           // Force a persistent (non-overlay) scrollbar. Styling ::-webkit-scrollbar with
           // an explicit width + non-overlay appearance keeps it from fading like the macOS
           // overlay scrollbar. Do NOT also set scrollbar-color — that re-enables overlay.

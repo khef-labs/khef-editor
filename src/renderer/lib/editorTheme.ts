@@ -3,6 +3,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { githubLight, githubDark } from '@uiw/codemirror-theme-github'
 import { monokai } from '@uiw/codemirror-theme-monokai'
 import { solarizedDark } from '@uiw/codemirror-theme-solarized'
+import { darkPlus } from './darkPlusTheme'
 import type { EditorThemeKey } from './themes'
 
 // Resolve a theme key to a CodeMirror theme extension.
@@ -17,7 +18,9 @@ export function editorThemeExtension(key: EditorThemeKey): Extension {
     case 'github-dark':
       return githubDark
     case 'one-dark':
-    default:
       return oneDark
+    case 'dark-plus':
+    default:
+      return darkPlus
   }
 }

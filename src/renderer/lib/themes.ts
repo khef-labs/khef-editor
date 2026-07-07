@@ -2,7 +2,7 @@
 // used in styles.css) plus an editor theme key consumed by CodeEditor to pick a
 // CodeMirror theme. Applying a theme sets the vars on :root — no rebuild needed.
 
-export type EditorThemeKey = 'one-dark' | 'light' | 'monokai' | 'solarized-dark' | 'github-dark'
+export type EditorThemeKey = 'dark-plus' | 'one-dark' | 'light' | 'monokai' | 'solarized-dark' | 'github-dark'
 
 export interface Theme {
   id: string
@@ -23,15 +23,17 @@ export const THEMES: Theme[] = [
   {
     id: 'dark-plus',
     name: 'Dark+ (default)',
-    editorTheme: 'one-dark',
+    editorTheme: 'dark-plus',
+    // Values taken directly from Roger's exported VS Code dark theme (vs-code-dark.json):
+    // a darker-than-stock Dark+ with a teal (#3994bc) accent.
     vars: {
-      '--bg': '#1e1e1e', '--bg-sidebar': '#252526', '--bg-activity': '#333333',
-      '--bg-tab-inactive': '#2d2d2d', '--bg-tab-active': '#1e1e1e', '--bg-statusbar': '#007acc',
-      '--statusbar-bg': '#181818', '--statusbar-fg': '#cccccc',
-      '--border': '#1b1b1b', '--border-soft': '#2b2b2b', '--fg': '#cccccc',
-      '--fg-dim': '#8c8c8c', '--fg-bright': '#ffffff', '--accent': '#0e639c',
-      '--row-hover': '#2a2d2e', '--row-active': '#094771',
-      '--scrollbar-thumb': '#424242', '--scrollbar-thumb-hover': '#5a5a5a', '--active-line': '#323842', '--cursor-overview': '#a0a0a0',
+      '--bg': '#121314', '--bg-sidebar': '#191a1b', '--bg-activity': '#191a1b',
+      '--bg-tab-inactive': '#191a1b', '--bg-tab-active': '#121314', '--bg-statusbar': '#191a1b',
+      '--statusbar-bg': '#191a1b', '--statusbar-fg': '#8c8c8c',
+      '--border': '#2a2b2c', '--border-soft': '#2a2b2c', '--fg': '#bfbfbf',
+      '--fg-dim': '#8c8c8c', '--fg-bright': '#ededed', '--accent': '#3994bc',
+      '--row-hover': '#1e1f20', '--row-active': '#3994bc26',
+      '--scrollbar-thumb': '#a8a9aa85', '--scrollbar-thumb-hover': '#a8a9aa90', '--active-line': '#242526', '--cursor-overview': '#a0a0a0',
     },
   },
   {
