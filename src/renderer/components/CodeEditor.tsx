@@ -473,6 +473,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
     activeEditorView = view
+    view.focus() // focus a newly-mounted editor so the user can type immediately
     return () => {
       if (activeEditorView === view) activeEditorView = null
       view.destroy()
@@ -481,7 +482,10 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // When the open file changes (path), swap document + language.
+  // When the open file changes (path), swap document + language, and move focus into the
+  // editor so typing works right away after opening/switching a tab (VS Code behavior).
+  // Skipped while the Find widget is open, so opening/replacing a preview file mid-search
+  // doesn't yank focus out of the find input.
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
@@ -495,6 +499,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     } else {
       view.dispatch({ effects: languageComp.current.reconfigure(languageForFilename(filename)) })
     }
+    if (!findOpen) view.focus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
 
