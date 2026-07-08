@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
-import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction } from '@codemirror/state'
+import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction, type SelectionRange } from '@codemirror/state'
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
 import {
@@ -116,6 +116,34 @@ export function selectAllInActiveEditor(): boolean {
   if (!view) return false
   view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) })
   view.focus()
+  return true
+}
+
+function moveByLineBoundary(view: EditorView, start: SelectionRange, forward: boolean): SelectionRange {
+  const line = view.lineBlockAt(start.head)
+  let moved = view.moveToLineBoundary(start, forward)
+  if (moved.head === start.head && moved.head !== (forward ? line.to : line.from)) {
+    moved = view.moveToLineBoundary(start, forward, false)
+  }
+  if (!forward && moved.head === line.from && line.length) {
+    const indent = /^\s*/.exec(view.state.sliceDoc(line.from, Math.min(line.from + 100, line.to)))?.[0].length ?? 0
+    if (indent && start.head !== line.from + indent) {
+      moved = EditorSelection.cursor(line.from + indent)
+    }
+  }
+  return moved
+}
+
+function extendSelection(view: EditorView, move: (range: SelectionRange) => SelectionRange): boolean {
+  const selection = EditorSelection.create(
+    view.state.selection.ranges.map((range) => {
+      const moved = move(range)
+      return EditorSelection.range(range.anchor, moved.head, moved.goalColumn, moved.bidiLevel ?? undefined, moved.assoc)
+    }),
+    view.state.selection.mainIndex,
+  )
+  if (selection.eq(view.state.selection, true)) return false
+  view.dispatch(view.state.update({ selection, scrollIntoView: true, userEvent: 'select' }))
   return true
 }
 
@@ -346,9 +374,26 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   }
 
   // Word/doc motion via DOM events (macOS Option transforms event.key; event.code is stable).
+  // Shift+arrow selection is handled here too because the browser/Electron event is the
+  // ground truth for these native-feeling selection chords.
   const emacsDomHandlers = () => EditorView.domEventHandlers({
     keydown: (ev, view) => {
       const event = ev as KeyboardEvent
+      if (event.shiftKey && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+        const right = event.key === 'ArrowRight'
+        let handled = false
+        if (event.metaKey && !event.altKey && !event.ctrlKey) {
+          handled = extendSelection(view, (range) => moveByLineBoundary(view, range, right))
+        } else if (event.altKey && !event.metaKey && !event.ctrlKey) {
+          handled = extendSelection(view, (range) => view.moveByGroup(range, right))
+        } else if (!event.altKey && !event.metaKey && !event.ctrlKey) {
+          handled = extendSelection(view, (range) => view.moveByChar(range, right))
+        }
+        if (handled) {
+          event.preventDefault()
+          return true
+        }
+      }
       if (event.altKey && !event.ctrlKey && !event.metaKey) {
         if (event.code === 'KeyF' || event.code === 'KeyB') {
           event.preventDefault()
@@ -386,6 +431,13 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
+        // Tag the editor with .cm-has-selection whenever a selection exists. drawSelection()
+        // renders the selection layer BEHIND the content, so the opaque --active-line
+        // background would otherwise completely cover the selection on the caret's line —
+        // making keyboard selection (Shift+Arrow / word / line) look like it does nothing.
+        // The theme below hides the active-line highlight while selecting (VS Code behavior).
+        EditorView.editorAttributes.compute(['selection'], (s) =>
+          ({ class: s.selection.ranges.some((r) => !r.empty) ? 'cm-has-selection' : '' })),
         cursorOverviewMarker,
         // Render selection as a CM layer (not native), so it stays visible when the editor
         // is blurred — e.g. while focus is in the Find widget. Styled to persist below.
@@ -483,6 +535,11 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
           // specificity despite this being declared later.
           '.cm-activeLine': { backgroundColor: 'var(--active-line) !important' },
           '.cm-activeLineGutter': { backgroundColor: 'var(--active-line) !important' },
+          // While a selection exists, suppress the active-line background so it doesn't
+          // occlude the (behind-content) selection layer — matches VS Code, which hides
+          // the current-line highlight during a selection. Higher specificity (&.class
+          // descendant) beats the base .cm-activeLine !important rule above.
+          '&.cm-has-selection .cm-activeLine': { backgroundColor: 'transparent !important' },
         }),
       ],
     })
