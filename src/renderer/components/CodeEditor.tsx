@@ -133,6 +133,14 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   onUserEditRef.current = onUserEdit
   // Emacs "mark" (set with C-Space): when active, motion commands extend the selection.
   const markActiveRef = useRef(false)
+  // Value-sync loop guards (ported from khef's CodeEditor, commits cfb64e9 / fe52cde).
+  // Without these, typing → onChange → App setTree → new `value` prop → the value-sync
+  // effect re-dispatches the doc → updateListener fires onChange again → runaway loop that
+  // freezes the renderer. `isApplyingExternalUpdate` marks a programmatic doc replacement so
+  // the updateListener skips re-emitting; `emitCounter` lets the value effect ignore a stale
+  // `value` prop from an intermediate render that would clobber the user's latest keystroke.
+  const isApplyingExternalUpdateRef = useRef(false)
+  const emitCounterRef = useRef(0)
 
   // --- In-editor Find/Replace widget state (VS Code-style). ---
   const [findOpen, setFindOpen] = useState(false)
@@ -407,7 +415,15 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         themeComp.current.of(editorThemeExtension(themeKey)),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
+            // A doc change we applied ourselves (external value/path sync). Do NOT re-emit
+            // onChange — that would feed the new value back to App, which re-renders and
+            // re-syncs, looping until the renderer freezes. Consume the flag and stop.
+            if (isApplyingExternalUpdateRef.current) {
+              isApplyingExternalUpdateRef.current = false
+              return
+            }
             markActiveRef.current = false
+            emitCounterRef.current++ // this render's value prop is now stale
             onChangeRef.current(u.state.doc.toString())
             // Promote a preview tab only on a genuine user edit. Programmatic doc
             // replacement (path swap / value sync) is tagged with ProgrammaticDoc and must
@@ -491,6 +507,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     if (!view) return
     const current = view.state.doc.toString()
     if (current !== value) {
+      isApplyingExternalUpdateRef.current = true // suppress the onChange echo for this replace
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
         effects: languageComp.current.reconfigure(languageForFilename(filename)),
@@ -503,19 +520,25 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
 
-  // Sync external value changes (e.g. revert-to-saved) that arrive without a path change.
-  // When the user types, onChange flows the same text back as `value`, so it already
-  // matches the doc and this no-ops — only genuine external changes replace the doc.
+  // Capture the emit counter at render time so the value-sync effect can tell whether the
+  // `value` prop it received is already stale (the user typed after this render was queued).
+  const renderEmitCount = emitCounterRef.current
+
+  // Sync external value changes (e.g. revert-to-saved) that arrive WITHOUT a path change.
+  // Guards against the freeze loop: (1) if the user has typed since this render, the value
+  // prop is stale — skip, or we'd clobber the newest keystroke and thrash; (2) if the doc
+  // already matches, no-op; (3) otherwise mark it external so the updateListener won't echo.
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
+    if (emitCounterRef.current !== renderEmitCount) return // stale value from an old render
     const current = view.state.doc.toString()
-    if (value !== current) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
-        annotations: ProgrammaticDoc.of(true), // external value sync (e.g. revert) — not a user edit
-      })
-    }
+    if (value === current) return
+    isApplyingExternalUpdateRef.current = true
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: value },
+      annotations: ProgrammaticDoc.of(true), // external value sync (e.g. revert) — not a user edit
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
