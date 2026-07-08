@@ -71,7 +71,7 @@ export function FindWidget(props: FindWidgetProps) {
         onClick={onToggleReplaceExpanded}
         tabIndex={-1}
       >
-        {replaceExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        {replaceExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
       </button>
 
       <div class="find-rows">
@@ -90,13 +90,13 @@ export function FindWidget(props: FindWidgetProps) {
             />
             <div class="find-toggles">
               <button class={`find-toggle${caseSensitive ? ' active' : ''}`} title="Match Case" onClick={onToggleCase} tabIndex={-1}>
-                <CaseSensitive size={15} />
+                <CaseSensitive size={20} />
               </button>
               <button class={`find-toggle${wholeWord ? ' active' : ''}`} title="Match Whole Word" onClick={onToggleWord} tabIndex={-1}>
-                <WholeWord size={15} />
+                <WholeWord size={20} />
               </button>
               <button class={`find-toggle${regexp ? ' active' : ''}`} title="Use Regular Expression" onClick={onToggleRegex} tabIndex={-1}>
-                <Regex size={15} />
+                <Regex size={20} />
               </button>
             </div>
           </div>
@@ -105,16 +105,16 @@ export function FindWidget(props: FindWidgetProps) {
 
           <div class="find-actions">
             <button class="find-btn" title="Previous Match (⇧⏎)" onClick={onPrev} disabled={noMatches} tabIndex={-1}>
-              <ArrowUp size={16} />
+              <ArrowUp size={20} />
             </button>
             <button class="find-btn" title="Next Match (⏎)" onClick={onNext} disabled={noMatches} tabIndex={-1}>
-              <ArrowDown size={16} />
+              <ArrowDown size={20} />
             </button>
             <button class={`find-btn${inSelection ? ' active' : ''}`} title="Find in Selection" onClick={onToggleInSelection} tabIndex={-1}>
-              <TextSelect size={16} />
+              <TextSelect size={20} />
             </button>
             <button class="find-btn" title="Close (Esc)" onClick={onClose} tabIndex={-1}>
-              <X size={16} />
+              <X size={20} />
             </button>
           </div>
         </div>
@@ -142,10 +142,10 @@ export function FindWidget(props: FindWidgetProps) {
             </div>
             <div class="find-actions">
               <button class="find-btn" title="Replace (⏎)" onClick={onReplaceOne} disabled={noMatches} tabIndex={-1}>
-                <Replace size={16} />
+                <Replace size={20} />
               </button>
               <button class="find-btn" title="Replace All" onClick={onReplaceAll} disabled={noMatches} tabIndex={-1}>
-                <ReplaceAll size={16} />
+                <ReplaceAll size={20} />
               </button>
             </div>
           </div>
