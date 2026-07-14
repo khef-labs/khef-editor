@@ -4,7 +4,7 @@ import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highl
 import type { ViewUpdate } from '@codemirror/view'
 import {
   search, setSearchQuery, SearchQuery, findNext, findPrevious, replaceNext, replaceAll,
-  openSearchPanel, closeSearchPanel,
+  openSearchPanel, closeSearchPanel, selectNextOccurrence,
 } from '@codemirror/search'
 import { FindWidget } from './FindWidget'
 import { computeMatchState, type MatchRange } from '../lib/findMatches'
@@ -15,6 +15,7 @@ import {
   cursorGroupForward, cursorGroupBackward,
   selectCharForward, selectCharBackward, selectLineUp, selectLineDown,
   selectLineStart, selectLineEnd, selectGroupForward, selectGroupBackward,
+  selectLine, deleteLine,
 } from '@codemirror/commands'
 import { highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
@@ -117,6 +118,23 @@ export function selectAllInActiveEditor(): boolean {
   view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) })
   view.focus()
   return true
+}
+
+// Selection status for the app status bar ("3 selections" for Cmd+D multi-cursor,
+// "12 selected" for a single range). Module-level listener, same pattern as
+// activeEditorView — avoids threading a callback through PaneTree/EditorGroupView.
+let selectionStatusListener: ((label: string) => void) | null = null
+
+export function setSelectionStatusListener(fn: ((label: string) => void) | null): void {
+  selectionStatusListener = fn
+}
+
+function selectionLabel(state: EditorState): string {
+  const { ranges } = state.selection
+  if (ranges.length > 1) return `${ranges.length} selections`
+  const main = state.selection.main
+  if (!main.empty) return `${main.to - main.from} selected`
+  return ''
 }
 
 function moveByLineBoundary(view: EditorView, start: SelectionRange, forward: boolean): SelectionRange {
@@ -370,6 +388,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         } },
       { key: 'Ctrl-z', preventDefault: true, run: (view) => undo(view) },
       { key: 'Ctrl-Shift-z', preventDefault: true, run: (view) => redo(view) },
+      { key: 'Ctrl-/', preventDefault: true, run: (view) => undo(view) }, // Emacs C-/ undo
     ]))
   }
 
@@ -417,7 +436,11 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
       return false
     },
     mousedown: (_e, view) => { markActiveRef.current = false; activeEditorView = view; return false },
-    focusin: (_e, view) => { activeEditorView = view; return false },
+    focusin: (_e, view) => {
+      activeEditorView = view
+      selectionStatusListener?.(selectionLabel(view.state)) // switching panes → show this editor's selection
+      return false
+    },
   })
 
   // Build the view once.
@@ -442,6 +465,9 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         // Render selection as a CM layer (not native), so it stays visible when the editor
         // is blurred — e.g. while focus is in the Find widget. Styled to persist below.
         drawSelection(),
+        // Required for Cmd+D multi-cursor: CM6 rejects additional selection ranges unless
+        // this is on. drawSelection() renders all the cursors; typing edits every range.
+        EditorState.allowMultipleSelections.of(true),
         EditorView.lineWrapping,
         history(),
         foldGutter(),
@@ -458,6 +484,11 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
           // find/replace nav commands are dispatched by the widget instead.
           { key: 'Mod-f', run: () => { openFindRef.current(false); return true } },
           { key: 'Mod-Alt-f', run: () => { openFindRef.current(true); return true } },
+          // VS Code selection/line staples not in defaultKeymap. Cmd+D grows a multi-cursor
+          // selection per occurrence (Escape collapses via defaultKeymap's simplifySelection).
+          { key: 'Mod-d', preventDefault: true, run: selectNextOccurrence },
+          { key: 'Mod-l', preventDefault: true, run: selectLine },
+          { key: 'Mod-Shift-k', preventDefault: true, run: deleteLine },
           indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
@@ -496,6 +527,9 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
             if (!fromSearch && !main.empty) {
               lastSelectionRef.current = { from: main.from, to: main.to }
             }
+            // Report the selection to the status bar (only from the active editor, so a
+            // background split pane doesn't clobber the focused pane's status).
+            if (activeEditorView === u.view) selectionStatusListener?.(selectionLabel(u.state))
           }
         }),
         EditorView.theme({
@@ -548,7 +582,10 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     activeEditorView = view
     view.focus() // focus a newly-mounted editor so the user can type immediately
     return () => {
-      if (activeEditorView === view) activeEditorView = null
+      if (activeEditorView === view) {
+        activeEditorView = null
+        selectionStatusListener?.('') // closing the active editor → clear the status
+      }
       view.destroy()
       viewRef.current = null
     }

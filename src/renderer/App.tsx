@@ -8,7 +8,7 @@ import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
-import { selectAllInActiveEditor } from './components/CodeEditor'
+import { selectAllInActiveEditor, setSelectionStatusListener } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { isPreviewable } from './lib/preview'
 import {
@@ -33,6 +33,13 @@ export function App() {
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Status-bar selection label ("3 selections" / "12 selected"), fed by the active editor.
+  const [selStatus, setSelStatus] = useState('')
+
+  useEffect(() => {
+    setSelectionStatusListener(setSelStatus)
+    return () => setSelectionStatusListener(null)
+  }, [])
 
   // Focus the initial leaf on mount.
   useEffect(() => {
@@ -716,7 +723,10 @@ export function App() {
           {focusedTab && ` — ${focusedTab.name}${focusedTab.content !== focusedTab.savedContent ? ' ●' : ''}`}
           {paneCount > 1 && `  ·  ${paneCount} panes`}
         </span>
-        <span class="status-right">{error ? `⚠ ${error}` : 'khef-editor v0.1.0'}</span>
+        <span class="status-right">
+          {selStatus && <span class="status-selection" data-testid="status-selection">{selStatus}  ·  </span>}
+          {error ? `⚠ ${error}` : 'khef-editor v0.1.0'}
+        </span>
       </footer>
 
       {quickOpen && root && (
