@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   readFile: (filePath) => ipcRenderer.invoke('fs:read', filePath),
   writeFile: (filePath, content) => ipcRenderer.invoke('fs:write', filePath, content),
   writeLooseFile: (filePath, content) => ipcRenderer.invoke('fs:writeLooseFile', filePath, content),
+  readLooseFile: (filePath) => ipcRenderer.invoke('fs:readLoose', filePath),
   saveAs: (content, suggestedName) => ipcRenderer.invoke('fs:saveAs', content, suggestedName),
   tree: (dirPath, depth) => ipcRenderer.invoke('fs:tree', dirPath ?? null, depth ?? 8),
   listFiles: () => ipcRenderer.invoke('fs:listFiles'),

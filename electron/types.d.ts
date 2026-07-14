@@ -170,6 +170,7 @@ export interface EditorApi {
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>
   writeLooseFile(filePath: string, content: string): Promise<WriteFileResult>
+  readLooseFile(filePath: string): Promise<ReadFileResult>
   saveAs(content: string, suggestedName: string): Promise<SaveAsResult | null>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
   listFiles(): Promise<ListFilesResult>

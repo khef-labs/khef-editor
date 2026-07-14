@@ -209,6 +209,24 @@ function registerFsIpc() {
     return { path: real, mtimeMs: st.mtimeMs, size: st.size }
   })
 
+  // Re-read a loose file from disk (reload/revert). Same trust gate as fs:writeLooseFile:
+  // only a realpath the user opened via the loose dialog or OS open-file IN THIS WINDOW.
+  ipcMain.handle('fs:readLoose', async (event, requestedPath) => {
+    const wcId = event.sender.id
+    assertString(requestedPath, 'path')
+    const real = await fsp.realpath(path.resolve(requestedPath))
+    if (!looseSet(wcId).has(real)) {
+      throw new Error('File was not opened via Open File')
+    }
+    const st = await fsp.stat(real)
+    if (!st.isFile()) throw new Error('Not a file')
+    if (st.size > MAX_FILE_SIZE) {
+      throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
+    }
+    const content = await fsp.readFile(real, 'utf8')
+    return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
+  })
+
   // Save an untitled buffer to a user-chosen location. The renderer NEVER supplies the
   // final path — main opens the native Save dialog and decides how to write based on where
   // the user picks:

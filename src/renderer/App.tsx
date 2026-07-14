@@ -581,16 +581,32 @@ export function App() {
     if (leaf?.activePath) closeTab(leaf.id, leaf.activePath)
   }, [closeTab])
 
-  // Revert the focused tab to its last-saved content (Ctrl+9, like khef's editor).
-  const revertFocusedTab = useCallback(() => {
+  // Reload the focused tab from disk (Ctrl+9). Covers both revert cases: discards unsaved
+  // edits AND picks up external changes (the app has no file watcher, so this is the manual
+  // refresh). Untitled buffers have no disk file — fall back to the in-memory revert.
+  const revertFocusedTab = useCallback(async () => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
-    if (!leaf || !tab || tab.kind === 'preview') return
-    if (tab.content === tab.savedContent) return
-    // Restore content in every pane showing this file so split views stay in sync.
-    setTree((prev) => mapLeaves(prev, (l) => ({
-      ...l, tabs: l.tabs.map((t) => (t.path === tab.path ? { ...t, content: t.savedContent } : t)),
-    })))
+    if (!leaf || !tab || tab.kind === 'preview' || tab.kind === 'diff') return
+    if (tab.untitled) {
+      if (tab.content === tab.savedContent) return
+      setTree((prev) => mapLeaves(prev, (l) => ({
+        ...l, tabs: l.tabs.map((t) => (t.path === tab.path ? { ...t, content: t.savedContent } : t)),
+      })))
+      return
+    }
+    try {
+      const res = tab.loose
+        ? await window.editorApi.readLooseFile(tab.path)
+        : await window.editorApi.readFile(tab.path)
+      // Fresh disk content becomes both content and savedContent, in every pane showing
+      // this file (split views stay in sync); the tab reads as clean afterwards.
+      setTree((prev) => mapLeaves(prev, (l) => ({
+        ...l, tabs: l.tabs.map((t) => (t.path === tab.path ? { ...t, content: res.content, savedContent: res.content } : t)),
+      })))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }, [])
 
   // A file the OS asked us to open (Finder double-click / "Open With"), already read in
@@ -631,11 +647,11 @@ export function App() {
         if (root) setQuickOpen((v) => !v)
         return
       }
-      // Ctrl+9 — revert the focused tab to its saved content (Emacs-friendly, like khef).
+      // Ctrl+9 — reload the focused tab from disk (Emacs-friendly, like khef).
       if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '9' || e.code === 'Digit9')) {
         e.preventDefault()
         e.stopPropagation()
-        revertFocusedTab()
+        void revertFocusedTab()
         return
       }
       // Arm the C-x prefix.
