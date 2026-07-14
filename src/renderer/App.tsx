@@ -8,6 +8,7 @@ import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
+import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { isPreviewable } from './lib/preview'
@@ -35,6 +36,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Status-bar selection label ("3 selections" / "12 selected"), fed by the active editor.
   const [selStatus, setSelStatus] = useState('')
+  // Tab context menu (right-click a tab): which tab, and where to render the menu.
+  const [tabMenu, setTabMenu] = useState<{ leafId: string; path: string; x: number; y: number } | null>(null)
 
   useEffect(() => {
     setSelectionStatusListener(setSelStatus)
@@ -308,8 +311,11 @@ export function App() {
     setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: path })))
   }, [])
 
-  const changeContent = useCallback((leafId: string, path: string, content: string) => {
-    setTree((prev) => updateLeaf(prev, leafId, (l) => ({
+  const changeContent = useCallback((_leafId: string, path: string, content: string) => {
+    // Update the tab in EVERY leaf showing this file, not just the one being typed in —
+    // split views of the same file must stay in sync (save and revert already map across
+    // all leaves; Split Right from the tab menu makes same-file splits routine).
+    setTree((prev) => mapLeaves(prev, (l) => ({
       ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, content } : t)),
     })))
     // Live-update any preview tab sourced from this file, across all panes. Keep
@@ -427,6 +433,50 @@ export function App() {
     })
   }, [])
 
+  // Bulk-close for the tab context menu: keep only tabs passing `keep`; collapse the pane
+  // when nothing remains (same last-tab semantics as closeTab above).
+  const closeTabsWhere = useCallback((leafId: string, keep: (t: OpenTab, i: number) => boolean) => {
+    setTree((prev) => {
+      const leaf = findLeaf(prev, leafId)
+      if (!leaf) return prev
+      const remaining = leaf.tabs.filter((t, i) => keep(t, i))
+      if (remaining.length === 0) {
+        const res = removeLeaf(prev, leafId)
+        if (!res) return updateLeaf(prev, leafId, (l) => ({ ...l, tabs: [], activePath: null }))
+        setActiveLeafId(res.focusId)
+        return res.tree
+      }
+      return updateLeaf(prev, leafId, (l) => {
+        const tabs = l.tabs.filter((t, i) => keep(t, i))
+        const activePath = tabs.some((t) => t.path === l.activePath)
+          ? l.activePath
+          : (tabs[tabs.length - 1]?.path ?? null)
+        return { ...l, tabs, activePath }
+      })
+    })
+  }, [])
+
+  const closeOthers = useCallback((leafId: string, path: string) => {
+    closeTabsWhere(leafId, (t) => t.path === path)
+  }, [closeTabsWhere])
+
+  const closeToTheRight = useCallback((leafId: string, path: string) => {
+    const leaf = findLeaf(treeRef.current, leafId)
+    const idx = leaf?.tabs.findIndex((t) => t.path === path) ?? -1
+    if (idx < 0) return
+    closeTabsWhere(leafId, (_t, i) => i <= idx)
+  }, [closeTabsWhere])
+
+  // Close every tab whose content matches disk (VS Code "Close Saved"). Untitled buffers
+  // count as unsaved; preview/diff tabs are read-only and always "saved".
+  const closeSaved = useCallback((leafId: string) => {
+    closeTabsWhere(leafId, (t) => t.content !== t.savedContent || !!t.untitled)
+  }, [closeTabsWhere])
+
+  const closeAll = useCallback((leafId: string) => {
+    closeTabsWhere(leafId, () => false)
+  }, [closeTabsWhere])
+
   // Refs so once-subscribed handlers (menu events, key chords) always read current
   // focus/tree without re-subscribing. Declared before the pane ops that close over them.
   const activeLeafIdRef = useRef('')
@@ -456,6 +506,21 @@ export function App() {
   const splitFocused = useCallback((orientation: 'row' | 'column') => {
     splitById(activeLeafIdRef.current, orientation)
   }, [splitById])
+
+  // "Split Right" from the tab context menu: open THIS tab in a new pane to the right.
+  // The clone drops `ephemeral` — a deliberately split-out editor is a kept editor.
+  // Content stays in sync across the panes via changeContent's map-all-leaves update.
+  const splitRightWithTab = useCallback((leafId: string, path: string) => {
+    setTree((prev) => {
+      const leaf = findLeaf(prev, leafId)
+      const tab = leaf?.tabs.find((t) => t.path === path)
+      if (!leaf || !tab) return prev
+      const res = splitLeafWithTab(prev, leafId, 'row', { ...tab, ephemeral: undefined })
+      if (!res) return prev
+      setActiveLeafId(res.newLeafId)
+      return res.tree
+    })
+  }, [])
 
   // Open a rendered Markdown/Mermaid preview of the focused file in a split to the side.
   // If a preview of this file is already open, just focus it.
@@ -705,6 +770,7 @@ export function App() {
               onChangeContent={changeContent}
               onUserEdit={editTab}
               onPromoteTab={promoteTab}
+              onTabContextMenu={(leafId, path, e) => setTabMenu({ leafId, path, x: e.clientX, y: e.clientY })}
               onSave={(leafId, path) => void saveTab(leafId, path)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
@@ -732,6 +798,35 @@ export function App() {
       {quickOpen && root && (
         <QuickOpen onPick={pickQuickOpen} onClose={() => setQuickOpen(false)} />
       )}
+
+      {tabMenu && (() => {
+        const menuLeaf = findLeaf(tree, tabMenu.leafId)
+        const menuTab = menuLeaf?.tabs.find((t) => t.path === tabMenu.path)
+        if (!menuLeaf || !menuTab) return null
+        const idx = menuLeaf.tabs.findIndex((t) => t.path === menuTab.path)
+        // Untitled/preview/diff tabs have synthetic paths — no disk path to copy or reveal.
+        const synthetic = !!menuTab.untitled || menuTab.kind === 'preview' || menuTab.kind === 'diff'
+        const relPath = root && menuTab.path.startsWith(root + '/') ? menuTab.path.slice(root.length + 1) : null
+        const entries: MenuEntry[] = [
+          { kind: 'item', label: 'Close', hint: '⌘W', onClick: () => closeTab(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Close Others', disabled: menuLeaf.tabs.length < 2, onClick: () => closeOthers(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Close to the Right', disabled: idx >= menuLeaf.tabs.length - 1, onClick: () => closeToTheRight(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Close Saved', onClick: () => closeSaved(menuLeaf.id) },
+          { kind: 'item', label: 'Close All', onClick: () => closeAll(menuLeaf.id) },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Copy Path', disabled: synthetic, onClick: () => void navigator.clipboard.writeText(menuTab.path) },
+          { kind: 'item', label: 'Copy Relative Path', disabled: synthetic || !relPath, onClick: () => { if (relPath) void navigator.clipboard.writeText(relPath) } },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Reveal in Finder', disabled: synthetic, onClick: () => {
+              window.editorApi.revealInFinder(menuTab.path).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+            } },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Keep Open', disabled: !menuTab.ephemeral, onClick: () => promoteTab(menuLeaf.id, menuTab.path) },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Split Right', onClick: () => splitRightWithTab(menuLeaf.id, menuTab.path) },
+        ]
+        return <ContextMenu x={tabMenu.x} y={tabMenu.y} entries={entries} onClose={() => setTabMenu(null)} />
+      })()}
     </div>
   )
 }

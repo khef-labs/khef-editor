@@ -5,7 +5,7 @@
 // workspace-confinement module (workspace.cjs). Inputs are validated defensively
 // because the renderer is the less-trusted side once it renders file content.
 
-const { ipcMain, dialog, BrowserWindow } = require('electron')
+const { ipcMain, dialog, BrowserWindow, shell } = require('electron')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
@@ -258,6 +258,26 @@ function registerFsIpc() {
 
   ipcMain.handle('ws:current', async (event) => {
     return { root: ws.getWorkspaceRoot(event.sender.id) }
+  })
+
+  // Reveal a file in Finder. Read-level trust: the path must resolve inside this window's
+  // workspace root (same confinement as fs:read), or be on this window's loose-file
+  // allowlist (a file the user opened via the dialog / Finder). Anything else is rejected —
+  // the renderer must never be able to probe arbitrary disk paths through Finder.
+  ipcMain.handle('fs:reveal', async (event, requestedPath) => {
+    const wcId = event.sender.id
+    assertString(requestedPath, 'path')
+    let real
+    try {
+      real = await ws.resolveExisting(wcId, requestedPath)
+    } catch (err) {
+      // Not under the workspace root — allow only an exact loose-allowlist match.
+      const candidate = await fsp.realpath(path.resolve(requestedPath))
+      if (!looseSet(wcId).has(candidate)) throw err
+      real = candidate
+    }
+    shell.showItemInFolder(real)
+    return { path: real }
   })
 
   // Read a file's text content (UTF-8). Confined to the calling window's root + size-capped.

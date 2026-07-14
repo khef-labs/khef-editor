@@ -176,6 +176,7 @@ export interface EditorApi {
   search(query: string, options?: SearchOptions): Promise<SearchResult>
   replaceAll(query: string, replacement: string, options?: SearchOptions): Promise<ReplaceResult>
   deletePath(targetPath: string): Promise<DeleteResult>
+  revealInFinder(filePath: string): Promise<{ path: string }>
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   recentFolders(): Promise<string[]>

@@ -10,9 +10,11 @@ interface TabBarProps {
   onClose: (path: string) => void
   // Double-clicking an ephemeral (preview) tab promotes it to a permanent tab.
   onPromote: (path: string) => void
+  // Right-click → tab context menu (position taken from the mouse event).
+  onContextMenu: (path: string, e: MouseEvent) => void
 }
 
-export function TabBar({ tabs, activePath, onActivate, onClose, onPromote }: TabBarProps) {
+export function TabBar({ tabs, activePath, onActivate, onClose, onPromote, onContextMenu }: TabBarProps) {
   if (tabs.length === 0) return null
   return (
     <div class="tabbar" data-testid="tabbar">
@@ -26,6 +28,7 @@ export function TabBar({ tabs, activePath, onActivate, onClose, onPromote }: Tab
               class={`tab${active ? ' active' : ''}${t.ephemeral ? ' ephemeral' : ''}`}
               onClick={() => onActivate(t.path)}
               onDblClick={() => onPromote(t.path)}
+              onContextMenu={(e) => { e.preventDefault(); onContextMenu(t.path, e) }}
               data-testid={`tab-${t.name}`}
             >
               <span class="tab-name">{t.name}</span>
