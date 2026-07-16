@@ -131,10 +131,18 @@ export function setSelectionStatusListener(fn: ((label: string) => void) | null)
 
 function selectionLabel(state: EditorState): string {
   const { ranges } = state.selection
-  if (ranges.length > 1) return `${ranges.length} selections`
-  const main = state.selection.main
-  if (!main.empty) return `${main.to - main.from} selected`
-  return ''
+  // Char + word counts across all non-empty ranges (words = whitespace-separated runs).
+  let chars = 0
+  let words = 0
+  for (const r of ranges) {
+    if (r.empty) continue
+    const text = state.sliceDoc(r.from, r.to)
+    chars += text.length
+    words += text.match(/\S+/g)?.length ?? 0
+  }
+  const counts = chars > 0 ? `${chars} selected · ${words} ${words === 1 ? 'word' : 'words'}` : ''
+  if (ranges.length > 1) return counts ? `${ranges.length} selections · ${counts}` : `${ranges.length} selections`
+  return counts
 }
 
 function moveByLineBoundary(view: EditorView, start: SelectionRange, forward: boolean): SelectionRange {
