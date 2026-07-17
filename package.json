@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "package": "npm run build && electron-builder --mac dir --publish never -c.mac.identity=null",
     "install:app": "bash scripts/install-app.sh",
+    "ke:install": "bash scripts/ke-edit.sh --install",
     "dist": "npm run build && electron-builder --mac dmg --publish never"
   },
   "devDependencies": {
@@ -72,6 +73,14 @@
         "dmg"
       ]
     },
+    "protocols": [
+      {
+        "name": "Khef Editor",
+        "schemes": [
+          "khef-editor"
+        ]
+      }
+    ],
     "fileAssociations": [
       {
         "ext": [

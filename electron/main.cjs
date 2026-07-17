@@ -8,6 +8,7 @@
 const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
+const fsp = require('node:fs/promises')
 const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, readLooseFileForWindow } = require('./fs-ipc.cjs')
 const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
@@ -18,6 +19,11 @@ const isDev = process.env.KHEF_EDITOR_DEV === '1'
 const DEV_URL = 'http://localhost:5273'
 
 app.setName('Khef Editor')
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
 
 let isQuitting = false // true only during an explicit app quit (Cmd+Q / menu Quit)
 
@@ -95,45 +101,191 @@ function sendToFocused(channel, ...args) {
   }
 }
 
-// --- Finder "Open With" / file-association handling ---
-// When a file is double-clicked in Finder (or `open -a "Khef Editor" file.md`), macOS
-// sends app.on('open-file'). On a COLD launch this fires BEFORE app is ready, so we buffer
-// paths until the app + a window are ready, then open them. Files opened this way live
-// anywhere on disk, so they go through the LOOSE-file path (read in main, pushed to the
-// renderer as a detached tab) — never the workspace-confined read.
+// --- Shell/Finder/deep-link launch handling ---
+// Supported launch forms:
+//   open -a "Khef Editor" file.md
+//   open -a "Khef Editor" --args .                  (cold launch / direct Electron launch)
+//   open -n -a "Khef Editor" --args --new-window .
+//   open -a "Khef Editor" --args --goto src/App.tsx:42
+//   open "khef-editor://open?path=/abs/file.ts&line=42&newWindow=1"
+// Use the custom protocol for shell helpers that must target an already-running app;
+// macOS Launch Services does not reliably deliver new --args to a running app.
+//
+// Files opened this way live anywhere on disk, so they go through the LOOSE-file path
+// (read in main, pushed to the renderer as a detached tab) — never the
+// workspace-confined read. Directories are forwarded to the renderer as workspace-open
+// requests.
 let appReady = false
-const pendingOpenFiles = []
+const pendingLaunchRequests = []
 
-// Read `filePath` as a loose file for a target window and push it to that renderer. Picks
+function expandHome(input) {
+  if (input === '~') return os.homedir()
+  if (input.startsWith('~/')) return path.join(os.homedir(), input.slice(2))
+  return input
+}
+
+function splitPathAndLine(input) {
+  const match = /^(.*):([0-9]+)(?::[0-9]+)?$/.exec(input)
+  if (!match || !match[1]) return { targetPath: input }
+  const line = Number.parseInt(match[2], 10)
+  return { targetPath: match[1], line: Number.isFinite(line) && line > 0 ? line : undefined }
+}
+
+function launchRequestFromTarget(rawTarget, cwd, lineOverride, options = {}) {
+  if (typeof rawTarget !== 'string' || rawTarget.length === 0) return null
+  const { targetPath, line } = splitPathAndLine(rawTarget)
+  const resolvedPath = path.resolve(cwd || process.cwd(), expandHome(targetPath))
+  return { path: resolvedPath, line: lineOverride || line, newWindow: !!options.newWindow }
+}
+
+function isDevAppPath(arg, cwd) {
+  if (!isDev) return false
+  if (arg === '.') return true
+  const resolved = path.resolve(cwd || process.cwd(), arg)
+  return resolved === path.resolve(__dirname, '..')
+}
+
+function parseLaunchArgs(argv, cwd = process.cwd()) {
+  const requests = []
+  const args = Array.isArray(argv) ? argv.slice(1) : []
+  if (args.length && isDevAppPath(args[0], cwd)) args.shift()
+
+  let positionalMode = false
+  let pendingLine = null
+  let pendingNewWindow = false
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]
+    if (!arg || arg.startsWith('-psn_')) continue
+
+    if (!positionalMode && arg === '--') {
+      positionalMode = true
+      continue
+    }
+    if (!positionalMode && arg === '--new-window') {
+      pendingNewWindow = true
+      continue
+    }
+    if (!positionalMode && arg === '--reuse-window') {
+      pendingNewWindow = false
+      continue
+    }
+    if (!positionalMode && (arg === '--goto' || arg === '-g')) {
+      const target = args[++i]
+      const request = launchRequestFromTarget(target, cwd, pendingLine || undefined, { newWindow: pendingNewWindow })
+      if (request) requests.push(request)
+      pendingLine = null
+      pendingNewWindow = false
+      continue
+    }
+    if (!positionalMode && arg.startsWith('--goto=')) {
+      const request = launchRequestFromTarget(arg.slice('--goto='.length), cwd, pendingLine || undefined, { newWindow: pendingNewWindow })
+      if (request) requests.push(request)
+      pendingLine = null
+      pendingNewWindow = false
+      continue
+    }
+    if (!positionalMode && (arg === '--line' || arg === '-l')) {
+      const parsed = Number.parseInt(args[++i] || '', 10)
+      pendingLine = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+      continue
+    }
+    if (!positionalMode && arg.startsWith('--line=')) {
+      const parsed = Number.parseInt(arg.slice('--line='.length), 10)
+      pendingLine = Number.isFinite(parsed) && parsed > 0 ? parsed : null
+      continue
+    }
+    if (!positionalMode && arg.startsWith('khef-editor://')) {
+      const request = parseLaunchUrl(arg)
+      if (request) requests.push(request)
+      continue
+    }
+    if (!positionalMode && arg.startsWith('-')) continue
+
+    const request = launchRequestFromTarget(arg, cwd, pendingLine || undefined, { newWindow: pendingNewWindow })
+    if (request) requests.push(request)
+    pendingLine = null
+    pendingNewWindow = false
+  }
+  return requests
+}
+
+function parseLaunchUrl(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'khef-editor:') return null
+    const rawPath = parsed.searchParams.get('path') || parsed.searchParams.get('file') || parsed.searchParams.get('root')
+    if (!rawPath) return null
+    const parsedLine = Number.parseInt(parsed.searchParams.get('line') || '', 10)
+    const newWindow = ['1', 'true', 'yes'].includes((parsed.searchParams.get('newWindow') || '').toLowerCase())
+    return launchRequestFromTarget(
+      rawPath,
+      process.cwd(),
+      Number.isFinite(parsedLine) && parsedLine > 0 ? parsedLine : undefined,
+      { newWindow },
+    )
+  } catch {
+    return null
+  }
+}
+
+function sendLaunchRequest(win, fresh, request) {
+  const send = () => win.webContents.send('menu:open-launch', request)
+  if (fresh || win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', send)
+  } else {
+    send()
+  }
+  win.show()
+  win.focus()
+}
+
+// Resolve a launch target, then push either a workspace-open or loose-file-open request to
 // the focused/visible window (revealing a hidden one), creating one if none exist.
-async function openOsFile(filePath) {
-  const { win, fresh } = targetWindow()
+async function openLaunchRequest(request) {
+  const { win, fresh } = targetWindow({ forceNew: request.newWindow })
   const wcId = win.webContents.id
   try {
-    const payload = await readLooseFileForWindow(wcId, filePath)
-    const send = () => win.webContents.send('menu:open-loose', payload)
-    if (fresh || win.webContents.isLoading()) {
-      win.webContents.once('did-finish-load', send)
-    } else {
-      send()
+    const real = await fsp.realpath(request.path)
+    const st = await fsp.stat(real)
+    if (st.isDirectory()) {
+      sendLaunchRequest(win, fresh, { kind: 'workspace', path: real })
+      return
     }
-    win.show()
-    win.focus()
+    if (!st.isFile()) return
+    const file = await readLooseFileForWindow(wcId, real)
+    sendLaunchRequest(win, fresh, { kind: 'file', file, line: request.line })
   } catch {
-    // Non-file, too large, or unreadable — silently ignore (matches the loose-file dialog).
+    // Missing, too large, unreadable, or unsupported — silently ignore (matches open dialog).
   }
 }
 
 // Queue a path if the app/window isn't ready yet, else open it now.
-function handleOpenFile(filePath) {
-  if (!appReady) { pendingOpenFiles.push(filePath); return }
-  void openOsFile(filePath)
+function handleLaunchRequest(request) {
+  if (!request) return
+  if (!appReady) { pendingLaunchRequests.push(request); return }
+  void openLaunchRequest(request)
 }
 
 // Register at top level so a cold-launch open-file (fired before whenReady) is captured.
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
-  handleOpenFile(filePath)
+  handleLaunchRequest(launchRequestFromTarget(filePath, process.cwd()))
+})
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  handleLaunchRequest(parseLaunchUrl(url))
+})
+
+app.on('second-instance', (_event, commandLine, workingDirectory) => {
+  const requests = parseLaunchArgs(commandLine, workingDirectory)
+  if (requests.length) {
+    for (const request of requests) handleLaunchRequest(request)
+    return
+  }
+  const { win } = targetWindow()
+  win.show()
+  win.focus()
 })
 
 // Resolve the window a menu command should act on. Menu items stay enabled even when the
@@ -142,7 +294,8 @@ app.on('open-file', (event, filePath) => {
 // no-op. Preference: focused → any visible → reveal a hidden one → create a new one.
 // Returns { win, fresh } where `fresh` means the window was just created (renderer not
 // loaded yet) so callers must defer any send until it finishes loading.
-function targetWindow() {
+function targetWindow(options = {}) {
+  if (options.forceNew) return { win: createWindow(), fresh: true }
   const focused = focusedWin()
   if (focused) return { win: focused, fresh: false }
   const wins = BrowserWindow.getAllWindows()
@@ -336,6 +489,13 @@ async function refreshMenu() {
 }
 
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('khef-editor', process.execPath, [path.resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient('khef-editor')
+  }
+
   installNavigationGuards()
   installCsp()
   registerFsIpc()
@@ -348,11 +508,15 @@ app.whenReady().then(() => {
   void refreshMenu()
   createWindow()
 
-  // App + first window are up: drain any files Finder asked us to open during cold launch.
+  for (const request of parseLaunchArgs(process.argv, process.cwd())) {
+    pendingLaunchRequests.push(request)
+  }
+
+  // App + first window are up: drain any launch requests captured during cold launch.
   appReady = true
-  if (pendingOpenFiles.length) {
-    const files = pendingOpenFiles.splice(0)
-    for (const f of files) void openOsFile(f)
+  if (pendingLaunchRequests.length) {
+    const requests = pendingLaunchRequests.splice(0)
+    for (const request of requests) void openLaunchRequest(request)
   }
 
   app.on('activate', () => {

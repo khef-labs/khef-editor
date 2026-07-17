@@ -142,7 +142,7 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch'
 
 // Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
 // the file was written outside the workspace root (subsequent saves go through the loose gate).
@@ -162,6 +162,10 @@ export interface LooseOpenPayload {
   mtimeMs: number
   size: number
 }
+
+export type LaunchOpenRequest =
+  | { kind: 'workspace'; path: string }
+  | { kind: 'file'; file: LooseOpenPayload; line?: number }
 
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
@@ -184,6 +188,7 @@ export interface EditorApi {
   clearRecentFolders(): Promise<string[]>
   git: GitApi
   onMenu(channel: 'menu:open-loose', handler: (payload: LooseOpenPayload) => void): () => void
+  onMenu(channel: 'menu:open-launch', handler: (request: LaunchOpenRequest) => void): () => void
   onMenu(channel: MenuChannel, handler: (...args: string[]) => void): () => void
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
 import { Files, Search as SearchIcon, GitBranch, Settings } from 'lucide-preact'
-import type { FsTreeEntry, FileListEntry } from '../../electron/types'
+import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
 import { FileTree } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -299,12 +299,17 @@ export function App() {
     }))
   }, [])
 
+  const jumpToLine = useCallback((filePath: string, line?: number) => {
+    if (typeof line !== 'number' || !Number.isFinite(line) || line <= 0) return
+    jumpTokenRef.current += 1
+    setPendingJump({ path: filePath, line, token: jumpTokenRef.current })
+  }, [])
+
   const openMatch = useCallback((filePath: string, fileName: string, line: number) => {
     void openPath(filePath, fileName).then(() => {
-      jumpTokenRef.current += 1
-      setPendingJump({ path: filePath, line, token: jumpTokenRef.current })
+      jumpToLine(filePath, line)
     })
-  }, [openPath])
+  }, [jumpToLine, openPath])
 
   const activateTab = useCallback((leafId: string, path: string) => {
     setActiveLeafId(leafId)
@@ -618,11 +623,26 @@ export function App() {
     void openPath(payload.path, name, { content: payload.content, loose: true })
   }, [openPath])
 
+  const openLaunchRequest = useCallback((request: LaunchOpenRequest | undefined) => {
+    if (!request || typeof request !== 'object') return
+    if (request.kind === 'workspace') {
+      if (typeof request.path === 'string') void openFolder(request.path)
+      return
+    }
+    if (request.kind === 'file' && request.file && typeof request.file.path === 'string') {
+      const name = request.file.path.split('/').pop() ?? request.file.path
+      void openPath(request.file.path, name, { content: request.file.content, loose: true }).then(() => {
+        jumpToLine(request.file.path, request.line)
+      })
+    }
+  }, [jumpToLine, openFolder, openPath])
+
   // Menu wiring (open-file / open-folder / save / close-tab / quick-open / settings / split).
   useEffect(() => {
     const offOpenFile = window.editorApi.onMenu('menu:open-file', () => void openFileViaDialog())
     const offNewFile = window.editorApi.onMenu('menu:new-file', () => newUntitled())
     const offOpenLoose = window.editorApi.onMenu('menu:open-loose', (payload) => openLoosePayload(payload))
+    const offOpenLaunch = window.editorApi.onMenu('menu:open-launch', (request) => openLaunchRequest(request))
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => saveFocused())
     const offQuick = window.editorApi.onMenu('menu:quick-open', () => setQuickOpen((v) => !v))
@@ -633,8 +653,8 @@ export function App() {
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
     const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => { void window.editorApi.clearRecentFolders().then(setRecentFolders) })
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)

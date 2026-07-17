@@ -34,6 +34,25 @@ npm run typecheck    # tsc --noEmit (optional sanity check)
 npm run build        # build renderer to dist/
 ```
 
+## Shell helper
+
+Install the `ke` alias:
+
+```bash
+npm run ke:install
+```
+
+Then use it like:
+
+```bash
+ke                  # open the current directory in a new Khef Editor window
+ke .                # open this directory in a new window
+ke src/App.tsx      # open a file in the focused window
+ke src/App.tsx:42   # open a file and jump to line 42
+```
+
+The canonical helper is `scripts/ke-edit.sh`; `scripts/ke` is a compatibility wrapper.
+
 ## Build the Mac app (Spotlight / Cmd+Space launchable)
 
 One command builds, installs to `/Applications`, and launches it:
