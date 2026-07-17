@@ -1022,5 +1022,7 @@ html, body, #app {
   cursor: pointer; text-align: left; font-family: var(--font-ui); font-size: 13px;
 }
 .welcome-recent-row:hover { background: var(--row-hover); }
-.welcome-recent-name { flex: 0 0 auto; color: var(--bg-statusbar); }
-.welcome-recent-dir { flex: 1 1 0; color: var(--fg-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.welcome-recent-name { flex: 0 0 auto; color: var(--fg-dim); }
+.welcome-recent-dir { flex: 1 1 0; color: var(--fg-dim); opacity: 0.85; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.welcome-recent-row:hover .welcome-recent-name { color: var(--fg); }
+.welcome-recent-row:hover .welcome-recent-dir { color: var(--fg); opacity: 0.8; }
