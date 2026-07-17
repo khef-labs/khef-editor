@@ -1,19 +1,20 @@
-import { useState, useCallback } from 'preact/hooks'
+import { useEffect, useState, useCallback } from 'preact/hooks'
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-preact'
 import type { FsTreeEntry } from '../../../electron/types'
 
 interface FileTreeProps {
   entries: FsTreeEntry[]
   activePath: string | null
+  refreshToken: number
   onOpenFile: (entry: FsTreeEntry) => void
   onOpenFilePermanent: (entry: FsTreeEntry) => void
 }
 
-export function FileTree({ entries, activePath, onOpenFile, onOpenFilePermanent }: FileTreeProps) {
+export function FileTree({ entries, activePath, refreshToken, onOpenFile, onOpenFilePermanent }: FileTreeProps) {
   return (
     <div class="filetree" data-testid="filetree">
       {entries.map((e) => (
-        <TreeNode key={e.path} entry={e} depth={0} activePath={activePath} onOpenFile={onOpenFile} onOpenFilePermanent={onOpenFilePermanent} />
+        <TreeNode key={e.path} entry={e} depth={0} activePath={activePath} refreshToken={refreshToken} onOpenFile={onOpenFile} onOpenFilePermanent={onOpenFilePermanent} />
       ))}
     </div>
   )
@@ -23,11 +24,12 @@ interface TreeNodeProps {
   entry: FsTreeEntry
   depth: number
   activePath: string | null
+  refreshToken: number
   onOpenFile: (entry: FsTreeEntry) => void
   onOpenFilePermanent: (entry: FsTreeEntry) => void
 }
 
-function TreeNode({ entry, depth, activePath, onOpenFile, onOpenFilePermanent }: TreeNodeProps) {
+function TreeNode({ entry, depth, activePath, refreshToken, onOpenFile, onOpenFilePermanent }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FsTreeEntry[] | null>(entry.children ?? null)
   const [loading, setLoading] = useState(false)
@@ -35,27 +37,36 @@ function TreeNode({ entry, depth, activePath, onOpenFile, onOpenFilePermanent }:
   const isDir = entry.type === 'directory'
   const isActive = entry.path === activePath
 
+  const loadChildren = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await window.editorApi.tree(entry.path, 1)
+      setChildren(res.entries)
+    } catch {
+      setChildren([])
+    } finally {
+      setLoading(false)
+    }
+  }, [entry.path])
+
+  useEffect(() => {
+    if (!isDir) return
+    if (expanded) {
+      void loadChildren()
+    } else {
+      setChildren(entry.children ?? null)
+    }
+  }, [entry.children, expanded, isDir, loadChildren, refreshToken])
+
   // Single-click a file → soft-open (ephemeral preview tab). Directories toggle expand.
-  const toggle = useCallback(async () => {
+  const toggle = useCallback(() => {
     if (!isDir) {
       onOpenFile(entry)
       return
     }
     const next = !expanded
     setExpanded(next)
-    // Lazy-load children the first time we expand.
-    if (next && children === null) {
-      setLoading(true)
-      try {
-        const res = await window.editorApi.tree(entry.path, 1)
-        setChildren(res.entries)
-      } catch {
-        setChildren([])
-      } finally {
-        setLoading(false)
-      }
-    }
-  }, [isDir, expanded, children, entry, onOpenFile])
+  }, [isDir, expanded, entry, onOpenFile])
 
   // Double-click a file → open permanently (promote the preview). No-op for directories
   // (their double-click just toggles twice, which is harmless).
@@ -94,7 +105,7 @@ function TreeNode({ entry, depth, activePath, onOpenFile, onOpenFilePermanent }:
         <div>
           {loading && <div class="tree-row tree-loading" style={{ paddingLeft: `${indent + 26}px` }}>…</div>}
           {children?.map((c) => (
-            <TreeNode key={c.path} entry={c} depth={depth + 1} activePath={activePath} onOpenFile={onOpenFile} onOpenFilePermanent={onOpenFilePermanent} />
+            <TreeNode key={c.path} entry={c} depth={depth + 1} activePath={activePath} refreshToken={refreshToken} onOpenFile={onOpenFile} onOpenFilePermanent={onOpenFilePermanent} />
           ))}
         </div>
       )}

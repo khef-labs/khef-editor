@@ -9,7 +9,7 @@ const { app, BrowserWindow, Menu, session, shell } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fsp = require('node:fs/promises')
-const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, readLooseFileForWindow } = require('./fs-ipc.cjs')
+const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, clearWorkspaceWatch, readLooseFileForWindow } = require('./fs-ipc.cjs')
 const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
@@ -77,6 +77,7 @@ function createWindow() {
     // Only reached on real destroy (not the hide path above).
     ws.clearWorkspaceRoot(wcId)
     clearLooseFiles(wcId)
+    clearWorkspaceWatch(wcId)
   })
 
   return win

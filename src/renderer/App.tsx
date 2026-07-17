@@ -30,6 +30,7 @@ export function App() {
   const [recentFolders, setRecentFolders] = useState<string[]>([])
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
+  const [treeRefreshToken, setTreeRefreshToken] = useState(0)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -38,6 +39,8 @@ export function App() {
   const [selStatus, setSelStatus] = useState('')
   // Tab context menu (right-click a tab): which tab, and where to render the menu.
   const [tabMenu, setTabMenu] = useState<{ leafId: string; path: string; x: number; y: number } | null>(null)
+  const rootRef = useRef<string | null>(null)
+  rootRef.current = root
 
   useEffect(() => {
     setSelectionStatusListener(setSelStatus)
@@ -130,24 +133,53 @@ export function App() {
     void window.editorApi.setSettings({ theme: t.id })
   }, [])
 
+  const loadWorkspaceTree = useCallback(async (rootPath: string, revealExplorer: boolean) => {
+    const t = await window.editorApi.tree(rootPath, 1)
+    setRoot(rootPath)
+    setRootName(rootPath.split('/').filter(Boolean).pop() ?? rootPath)
+    setEntries(t.entries)
+    setTreeRefreshToken((n) => n + 1)
+    if (revealExplorer) {
+      setSidebarView('explorer')
+      setSidebarCollapsed(false)
+    }
+  }, [])
+
+  // Cmd+R reloads only the renderer; the main process still owns this window's workspace
+  // root. Rehydrate the Explorer from that per-window root so reload does not blank the app.
+  useEffect(() => {
+    let cancelled = false
+    window.editorApi.currentWorkspace().then((current) => {
+      if (!cancelled && current.root && !rootRef.current) {
+        void loadWorkspaceTree(current.root, true)
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [loadWorkspaceTree])
+
+  // External filesystem changes should appear in the Explorer without requiring a manual
+  // reload. Main owns the watcher and only sends a debounced notification; all reads still
+  // go through the normal confined tree IPC.
+  useEffect(() => {
+    return window.editorApi.onWorkspaceChanged((payload) => {
+      if (payload.root && payload.root === rootRef.current) {
+        void loadWorkspaceTree(payload.root, false)
+      }
+    })
+  }, [loadWorkspaceTree])
+
   // Open a folder. With no path, shows the picker; with a path (recent folder), opens it.
   const openFolder = useCallback(async (dirPath?: string) => {
     setError(null)
     try {
       const res = await window.editorApi.openWorkspace(dirPath ?? null)
       if (!res) return
-      setRoot(res.root)
-      setRootName(res.root.split('/').filter(Boolean).pop() ?? res.root)
-      const t = await window.editorApi.tree(res.root, 1)
-      setEntries(t.entries)
-      // Reveal the Explorer when a folder opens (sidebar starts collapsed).
-      setSidebarView('explorer')
-      setSidebarCollapsed(false)
+      await loadWorkspaceTree(res.root, true)
       void window.editorApi.recentFolders().then(setRecentFolders)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [])
+  }, [loadWorkspaceTree])
 
   // Open a file into the focused leaf (or activate it there if already open). When
   // `preloaded` is given (loose file already read in main), skip the confined read.
@@ -750,7 +782,7 @@ export function App() {
           {root ? (
             <>
               <div class="explorer-root">{rootName}</div>
-              <FileTree entries={entries} activePath={treeActivePath} onOpenFile={openFile} onOpenFilePermanent={openFilePermanent} />
+              <FileTree entries={entries} activePath={treeActivePath} refreshToken={treeRefreshToken} onOpenFile={openFile} onOpenFilePermanent={openFilePermanent} />
             </>
           ) : (
             <div class="sidebar-empty">

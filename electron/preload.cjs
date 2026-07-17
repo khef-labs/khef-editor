@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld('editorApi', {
   // Recent folders
   recentFolders: () => ipcRenderer.invoke('recent:get'),
   clearRecentFolders: () => ipcRenderer.invoke('recent:clear'),
+  onWorkspaceChanged: (handler) => {
+    const listener = (_event, payload) => handler(payload)
+    ipcRenderer.on('fs:workspace-changed', listener)
+    return () => ipcRenderer.removeListener('fs:workspace-changed', listener)
+  },
 
   // Menu events (main → renderer). Returns an unsubscribe function. The handler receives
   // any extra arg the main process sent (e.g. the path for menu:open-recent).

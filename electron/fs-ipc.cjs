@@ -6,6 +6,7 @@
 // because the renderer is the less-trusted side once it renders file content.
 
 const { ipcMain, dialog, BrowserWindow, shell } = require('electron')
+const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
@@ -24,6 +25,8 @@ const MAX_TREE_ENTRIES = 20000 // bound a pathological folder from freezing the 
 // workspace root — the per-file write gate for detached files, scoped per window so one
 // window cannot save into a file another window opened loosely.
 const looseFilesByWindow = new Map()
+const workspaceWatchersByWindow = new Map()
+const workspaceWatchTimersByWindow = new Map()
 
 function looseSet(wcId) {
   let s = looseFilesByWindow.get(wcId)
@@ -34,6 +37,40 @@ function looseSet(wcId) {
 // Drop a window's loose-file allowlist (called by main.cjs on window destroy).
 function clearLooseFiles(wcId) {
   looseFilesByWindow.delete(wcId)
+}
+
+function clearWorkspaceWatch(wcId) {
+  const watcher = workspaceWatchersByWindow.get(wcId)
+  if (watcher) {
+    try { watcher.close() } catch {}
+    workspaceWatchersByWindow.delete(wcId)
+  }
+  const timer = workspaceWatchTimersByWindow.get(wcId)
+  if (timer) {
+    clearTimeout(timer)
+    workspaceWatchTimersByWindow.delete(wcId)
+  }
+}
+
+function startWorkspaceWatch(wcId, root, webContents) {
+  clearWorkspaceWatch(wcId)
+  try {
+    const watcher = fs.watch(root, { recursive: true }, () => {
+      const existing = workspaceWatchTimersByWindow.get(wcId)
+      if (existing) clearTimeout(existing)
+      const timer = setTimeout(() => {
+        workspaceWatchTimersByWindow.delete(wcId)
+        if (!webContents.isDestroyed()) {
+          webContents.send('fs:workspace-changed', { root })
+        }
+      }, 120)
+      workspaceWatchTimersByWindow.set(wcId, timer)
+    })
+    watcher.on('error', () => clearWorkspaceWatch(wcId))
+    workspaceWatchersByWindow.set(wcId, watcher)
+  } catch {
+    // Watching is opportunistic; the tree still loads and manual reload still works.
+  }
 }
 
 // Read a trusted OS-provided file path as a loose file for a specific window: realpath +
@@ -168,6 +205,7 @@ function registerFsIpc() {
     }
     assertString(dir, 'path')
     const root = await ws.setWorkspaceRoot(wcId, dir)
+    startWorkspaceWatch(wcId, root, event.sender)
     // Record the realpath'd root as recently-opened and refresh the Open Recent menu.
     await addRecentFolder(root)
     if (onWorkspaceOpened) onWorkspaceOpened()
@@ -362,4 +400,4 @@ function registerFsIpc() {
   })
 }
 
-module.exports = { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, readLooseFileForWindow, MAX_FILE_SIZE, IGNORED_DIRS }
+module.exports = { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, clearWorkspaceWatch, readLooseFileForWindow, MAX_FILE_SIZE, IGNORED_DIRS }

@@ -18,6 +18,10 @@ export interface CurrentWorkspaceResult {
   root: string | null
 }
 
+export interface WorkspaceChangedPayload {
+  root: string
+}
+
 export interface ReadFileResult {
   path: string
   content: string
@@ -186,6 +190,7 @@ export interface EditorApi {
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   recentFolders(): Promise<string[]>
   clearRecentFolders(): Promise<string[]>
+  onWorkspaceChanged(handler: (payload: WorkspaceChangedPayload) => void): () => void
   git: GitApi
   onMenu(channel: 'menu:open-loose', handler: (payload: LooseOpenPayload) => void): () => void
   onMenu(channel: 'menu:open-launch', handler: (request: LaunchOpenRequest) => void): () => void
