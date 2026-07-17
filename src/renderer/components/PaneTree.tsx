@@ -15,7 +15,7 @@ interface PaneTreeProps {
   onUserEdit: (leafId: string, path: string) => void
   onPromoteTab: (leafId: string, path: string) => void
   onTabContextMenu: (leafId: string, path: string, e: MouseEvent) => void
-  onSave: (leafId: string, path: string) => void
+  onSave: (leafId: string, path: string, content?: string) => void
   onResize: (splitId: string, sizes: number[]) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
@@ -129,7 +129,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       onUserEdit={(path) => onUserEdit(leaf.id, path)}
       onPromoteTab={(path) => onPromoteTab(leaf.id, path)}
       onTabContextMenu={(path, e) => onTabContextMenu(leaf.id, path, e)}
-      onSave={(path) => onSave(leaf.id, path)}
+      onSave={(path, content) => onSave(leaf.id, path, content)}
       onOpenFolder={onOpenFolder}
       onOpenFile={onOpenFile}
       onOpenSettings={onOpenSettings}

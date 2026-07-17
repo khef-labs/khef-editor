@@ -72,13 +72,15 @@ export function findLeaf(node: LayoutNode, id: string): LeafNode | null {
 // Map every leaf, returning a new tree.
 export function mapLeaves(node: LayoutNode, fn: (leaf: LeafNode) => LeafNode): LayoutNode {
   if (node.kind === 'leaf') return fn(node)
-  return { ...node, children: node.children.map((c) => mapLeaves(c, fn)) }
+  const children = node.children.map((c) => mapLeaves(c, fn))
+  return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node
 }
 
 // Update one leaf (by id), returning a new tree.
 export function updateLeaf(node: LayoutNode, id: string, fn: (leaf: LeafNode) => LeafNode): LayoutNode {
   if (node.kind === 'leaf') return node.id === id ? fn(node) : node
-  return { ...node, children: node.children.map((c) => updateLeaf(c, id, fn)) }
+  const children = node.children.map((c) => updateLeaf(c, id, fn))
+  return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node
 }
 
 // Update a split's sizes (by split id).

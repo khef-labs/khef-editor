@@ -17,7 +17,7 @@ interface EditorGroupViewProps {
   onUserEdit: (path: string) => void
   onPromoteTab: (path: string) => void
   onTabContextMenu: (path: string, e: MouseEvent) => void
-  onSave: (path: string) => void
+  onSave: (path: string, content?: string) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
   onOpenSettings?: () => void
@@ -67,7 +67,7 @@ export function EditorGroupView({
               gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
               onChange={(content) => onChangeContent(activeTab.path, content)}
               onUserEdit={() => onUserEdit(activeTab.path)}
-              onSave={() => onSave(activeTab.path)}
+              onSave={(content) => onSave(activeTab.path, content)}
             />
           )
         ) : (

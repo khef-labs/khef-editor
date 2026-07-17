@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
-import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction, type SelectionRange } from '@codemirror/state'
+import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction, type SelectionRange, type Text } from '@codemirror/state'
 import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
 import {
@@ -28,46 +28,58 @@ import type { EditorThemeKey } from '../lib/themes'
 const cursorOverviewMarker = ViewPlugin.fromClass(
   class {
     marker: HTMLDivElement
-    view: EditorView
+    pending = false
+    lastLine = -1
+    lastLines = -1
+    lastHeight = -1
+    lastTop = -1
     constructor(view: EditorView) {
-      this.view = view
       this.marker = document.createElement('div')
       this.marker.className = 'cm-cursor-overview'
       // Appended to .cm-editor (does not scroll) so the tick stays fixed to the viewport
       // right edge at the cursor row's on-screen Y.
       view.dom.appendChild(this.marker)
-      // Defer the first placement until after the view has been measured.
-      view.requestMeasure({ read: () => this.reposition(view) })
+      this.schedule(view)
     }
     update(update: ViewUpdate) {
-      // Reposition on cursor move, edits, and any geometry/viewport change (scrolling).
-      this.reposition(update.view)
+      if (update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged) {
+        this.schedule(update.view)
+      }
     }
-    reposition(view: EditorView) {
-      // VS Code's overview-ruler cursor marker is ALWAYS document-relative: it sits in the
-      // scrollbar lane at (cursorLine / totalLines) of the editor height, regardless of
-      // where the viewport is scrolled. It does not track the cursor's on-screen row.
-      const head = view.state.selection.main.head
-      const totalLines = view.state.doc.lines
-      const cursorLine = view.state.doc.lineAt(head).number
-      const frac = totalLines > 1 ? (cursorLine - 1) / (totalLines - 1) : 0
-      const trackH = view.dom.clientHeight
-      const top = Math.round(frac * (trackH - 3))
-      this.marker.style.display = 'block'
-      this.marker.style.top = `${top}px`
+    schedule(view: EditorView) {
+      if (this.pending) return
+      this.pending = true
+      view.requestMeasure({
+        read: () => {
+          const head = view.state.selection.main.head
+          const totalLines = view.state.doc.lines
+          return {
+            cursorLine: view.state.doc.lineAt(head).number,
+            totalLines,
+            height: view.dom.clientHeight,
+          }
+        },
+        write: ({ cursorLine, totalLines, height }) => {
+          this.pending = false
+          if (cursorLine === this.lastLine && totalLines === this.lastLines && height === this.lastHeight) return
+          this.lastLine = cursorLine
+          this.lastLines = totalLines
+          this.lastHeight = height
+          // VS Code's overview-ruler cursor marker is document-relative: it sits in the
+          // scrollbar lane at (cursorLine / totalLines) of the editor height.
+          const frac = totalLines > 1 ? (cursorLine - 1) / (totalLines - 1) : 0
+          const top = Math.round(frac * (height - 3))
+          if (this.marker.style.display !== 'block') this.marker.style.display = 'block'
+          if (top !== this.lastTop) {
+            this.lastTop = top
+            this.marker.style.top = `${top}px`
+          }
+        },
+      })
     }
     destroy() {
       this.marker.remove()
     }
-  },
-  {
-    // coordsAtPos is viewport-relative, so reposition on scroll too.
-    eventHandlers: {
-      scroll() {
-        const self = this as unknown as { reposition(v: EditorView): void; view?: EditorView }
-        if (self.view) self.reposition(self.view)
-      },
-    },
   },
 )
 
@@ -80,7 +92,7 @@ interface CodeEditorProps {
   // A jump request: { line, token } — bump `token` to re-trigger a jump to the same line.
   gotoLine?: { line: number; token: number } | null
   onChange: (value: string) => void
-  onSave: () => void
+  onSave: (content?: string) => void
   // Fired only for USER-originated edits (typing, kill/yank, etc.) — NOT for programmatic
   // doc replacement (path swap, value sync). Used to promote a preview (ephemeral) tab to a
   // permanent one, since editing a soft-opened file commits it (VS Code behavior).
@@ -124,9 +136,11 @@ export function selectAllInActiveEditor(): boolean {
 // "12 selected" for a single range). Module-level listener, same pattern as
 // activeEditorView — avoids threading a callback through PaneTree/EditorGroupView.
 let selectionStatusListener: ((label: string) => void) | null = null
+let lastSelectionStatus = ''
 
 export function setSelectionStatusListener(fn: ((label: string) => void) | null): void {
   selectionStatusListener = fn
+  lastSelectionStatus = ''
 }
 
 function selectionLabel(state: EditorState): string {
@@ -143,6 +157,13 @@ function selectionLabel(state: EditorState): string {
   const counts = chars > 0 ? `${chars} selected · ${words} ${words === 1 ? 'word' : 'words'}` : ''
   if (ranges.length > 1) return counts ? `${ranges.length} selections · ${counts}` : `${ranges.length} selections`
   return counts
+}
+
+function reportSelectionStatus(state: EditorState): void {
+  const label = selectionLabel(state)
+  if (label === lastSelectionStatus) return
+  lastSelectionStatus = label
+  selectionStatusListener?.(label)
 }
 
 function moveByLineBoundary(view: EditorView, start: SelectionRange, forward: boolean): SelectionRange {
@@ -195,6 +216,30 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   // `value` prop from an intermediate render that would clobber the user's latest keystroke.
   const isApplyingExternalUpdateRef = useRef(false)
   const emitCounterRef = useRef(0)
+  const pendingDocRef = useRef<Text | null>(null)
+  const pendingChangeFrameRef = useRef<number | null>(null)
+
+  const emitPendingChange = useCallback((docOverride?: Text): string | null => {
+    if (pendingChangeFrameRef.current !== null) {
+      cancelAnimationFrame(pendingChangeFrameRef.current)
+      pendingChangeFrameRef.current = null
+    }
+    const doc = docOverride ?? pendingDocRef.current
+    pendingDocRef.current = null
+    if (!doc) return null
+    const content = doc.toString()
+    onChangeRef.current(content)
+    return content
+  }, [])
+
+  const scheduleChange = useCallback((doc: Text) => {
+    pendingDocRef.current = doc
+    if (pendingChangeFrameRef.current !== null) return
+    pendingChangeFrameRef.current = requestAnimationFrame(() => {
+      pendingChangeFrameRef.current = null
+      void emitPendingChange()
+    })
+  }, [emitPendingChange])
 
   // --- In-editor Find/Replace widget state (VS Code-style). ---
   const [findOpen, setFindOpen] = useState(false)
@@ -446,7 +491,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     mousedown: (_e, view) => { markActiveRef.current = false; activeEditorView = view; return false },
     focusin: (_e, view) => {
       activeEditorView = view
-      selectionStatusListener?.(selectionLabel(view.state)) // switching panes → show this editor's selection
+      reportSelectionStatus(view.state) // switching panes → show this editor's selection
       return false
     },
   })
@@ -486,7 +531,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         // own floating FindWidget. Include search() BEFORE the keymap so its state exists.
         search({ createPanel: hiddenSearchPanel }),
         keymap.of([
-          { key: 'Mod-s', run: () => { onSaveRef.current(); return true } },
+          { key: 'Mod-s', run: (view) => { onSaveRef.current(emitPendingChange(view.state.doc) ?? view.state.doc.toString()); return true } },
           // Our Cmd+F opens the custom find widget (and the hidden panel behind it). We do
           // NOT spread ...searchKeymap, so CM's default Mod-f panel never appears; the
           // find/replace nav commands are dispatched by the widget instead.
@@ -515,7 +560,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
             }
             markActiveRef.current = false
             emitCounterRef.current++ // this render's value prop is now stale
-            onChangeRef.current(u.state.doc.toString())
+            scheduleChange(u.state.doc)
             // Promote a preview tab only on a genuine user edit. Programmatic doc
             // replacement (path swap / value sync) is tagged with ProgrammaticDoc and must
             // NOT count as an edit, or swapping the previewed file would promote it.
@@ -537,7 +582,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
             }
             // Report the selection to the status bar (only from the active editor, so a
             // background split pane doesn't clobber the focused pane's status).
-            if (activeEditorView === u.view) selectionStatusListener?.(selectionLabel(u.state))
+            if (activeEditorView === u.view) reportSelectionStatus(u.state)
           }
         }),
         EditorView.theme({
@@ -592,8 +637,12 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     return () => {
       if (activeEditorView === view) {
         activeEditorView = null
-        selectionStatusListener?.('') // closing the active editor → clear the status
+        if (lastSelectionStatus !== '') {
+          lastSelectionStatus = ''
+          selectionStatusListener?.('') // closing the active editor → clear the status
+        }
       }
+      void emitPendingChange()
       view.destroy()
       viewRef.current = null
     }

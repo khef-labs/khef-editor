@@ -352,14 +352,22 @@ export function App() {
     // Update the tab in EVERY leaf showing this file, not just the one being typed in —
     // split views of the same file must stay in sync (save and revert already map across
     // all leaves; Split Right from the tab menu makes same-file splits routine).
-    setTree((prev) => mapLeaves(prev, (l) => ({
-      ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, content } : t)),
-    })))
-    // Live-update any preview tab sourced from this file, across all panes. Keep
-    // savedContent in sync so a preview never renders as dirty.
-    setTree((prev) => mapLeaves(prev, (l) => ({
-      ...l, tabs: l.tabs.map((t) => (t.kind === 'preview' && t.sourcePath === path ? { ...t, content, savedContent: content } : t)),
-    })))
+    setTree((prev) => mapLeaves(prev, (l) => {
+      let changed = false
+      const tabs = l.tabs.map((t) => {
+        if (t.path === path) return t.content === content ? t : { ...t, content }
+        // Live-update any preview tab sourced from this file, across all panes. Keep
+        // savedContent in sync so a preview never renders as dirty.
+        if (t.kind === 'preview' && t.sourcePath === path) {
+          return t.content === content && t.savedContent === content ? t : { ...t, content, savedContent: content }
+        }
+        return t
+      })
+      for (let i = 0; i < tabs.length; i += 1) {
+        if (tabs[i] !== l.tabs[i]) { changed = true; break }
+      }
+      return changed ? { ...l, tabs } : l
+    }))
   }, [])
 
   // A genuine USER edit in a tab promotes it from ephemeral (preview) to permanent, like
@@ -368,23 +376,24 @@ export function App() {
   // in-flight ephemeral read can't re-mark this now-permanent tab.
   const editTab = useCallback((leafId: string, path: string) => {
     openTokens.current.set(leafId, (openTokens.current.get(leafId) ?? 0) + 1)
+    const tab = findLeaf(treeRef.current, leafId)?.tabs.find((t) => t.path === path)
+    if (!tab?.ephemeral) return
     setTree((prev) => updateLeaf(prev, leafId, (l) => {
-      const tab = l.tabs.find((t) => t.path === path)
-      if (!tab || !tab.ephemeral) return l
       return { ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, ephemeral: undefined } : t)) }
     }))
   }, [])
 
-  const saveTab = useCallback(async (leafId: string, path: string) => {
+  const saveTab = useCallback(async (leafId: string, path: string, contentOverride?: string) => {
     const leaf = findLeaf(treeRef.current, leafId)
     const tab = leaf?.tabs.find((t) => t.path === path)
     if (!tab) return
     if (tab.kind === 'preview' || tab.kind === 'diff') return // read-only tabs
+    const currentContent = contentOverride ?? tab.content
 
     // Untitled buffer → Save-As. Main owns the dialog + the confined/loose write decision;
     // the renderer never supplies the final path.
     if (tab.untitled) {
-      const writtenContent = tab.content // exactly what we send to disk
+      const writtenContent = currentContent // exactly what we send to disk
       try {
         const res = await window.editorApi.saveAs(writtenContent, tab.name)
         if (!res) return // user canceled → stays untitled
@@ -410,7 +419,7 @@ export function App() {
           return updateLeaf(prev, leafId, (l) => ({
             ...l,
             tabs: l.tabs.map((t) => (t.path === path
-              ? { ...t, path: res.path, name: res.name, untitled: undefined, loose: res.loose || undefined, savedContent: writtenContent }
+              ? { ...t, path: res.path, name: res.name, content: currentContent, untitled: undefined, loose: res.loose || undefined, savedContent: writtenContent }
               : t)),
             activePath: l.activePath === path ? res.path : l.activePath,
           }))
@@ -424,13 +433,13 @@ export function App() {
 
     try {
       if (tab.loose) {
-        await window.editorApi.writeLooseFile(tab.path, tab.content)
+        await window.editorApi.writeLooseFile(tab.path, currentContent)
       } else {
-        await window.editorApi.writeFile(tab.path, tab.content)
+        await window.editorApi.writeFile(tab.path, currentContent)
       }
       // Mark saved in EVERY leaf showing this file (split views stay in sync).
       setTree((prev) => mapLeaves(prev, (l) => ({
-        ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, savedContent: t.content } : t)),
+        ...l, tabs: l.tabs.map((t) => (t.path === path ? { ...t, content: currentContent, savedContent: currentContent } : t)),
       })))
       setScmRefresh((n) => n + 1) // working-tree changed → refresh source control
     } catch (e) {
@@ -839,7 +848,7 @@ export function App() {
               onUserEdit={editTab}
               onPromoteTab={promoteTab}
               onTabContextMenu={(leafId, path, e) => setTabMenu({ leafId, path, x: e.clientX, y: e.clientY })}
-              onSave={(leafId, path) => void saveTab(leafId, path)}
+              onSave={(leafId, path, content) => void saveTab(leafId, path, content)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
               onOpenFile={() => void openFileViaDialog()}
