@@ -13,7 +13,9 @@
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "package": "npm run build && electron-builder --mac dir --publish never -c.mac.identity=null",
+    "package:universal": "npm run build && electron-builder --mac dir --universal --publish never -c.mac.identity=null",
     "install:app": "bash scripts/install-app.sh",
+    "install:app:universal": "bash scripts/install-app.sh --universal",
     "ke:install": "bash scripts/ke-edit.sh --install",
     "dist": "npm run build && electron-builder --mac dmg --publish never"
   },
