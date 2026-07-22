@@ -19,7 +19,7 @@ import {
 } from '@codemirror/commands'
 import { highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
-import { languageForFilename } from '../lib/language'
+import { languageForFilename, loadLanguageForFilename } from '../lib/language'
 import { editorThemeExtension } from '../lib/editorTheme'
 import type { EditorThemeKey } from '../lib/themes'
 
@@ -199,6 +199,20 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
   const themeComp = useRef(new Compartment())
+  // Monotonic token guarding async grammar loads: switching files invalidates any
+  // in-flight load so a slow chunk can't clobber the newer file's language.
+  const langLoadTokenRef = useRef(0)
+
+  // If the sync path produced no language, try the full language-data registry.
+  // The grammar chunk is dynamically imported (once), then swapped into the
+  // language compartment — the doc re-highlights in place.
+  const applyAsyncLanguage = useCallback((view: EditorView, name: string) => {
+    const token = ++langLoadTokenRef.current
+    void loadLanguageForFilename(name).then((ext) => {
+      if (!ext || token !== langLoadTokenRef.current || viewRef.current !== view) return
+      view.dispatch({ effects: languageComp.current.reconfigure(ext) })
+    })
+  }, [])
   // Keep latest callbacks without rebuilding the view.
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
@@ -633,6 +647,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     const view = new EditorView({ state, parent: hostRef.current })
     viewRef.current = view
     activeEditorView = view
+    if (languageForFilename(filename).length === 0) applyAsyncLanguage(view, filename)
     view.focus() // focus a newly-mounted editor so the user can type immediately
     return () => {
       if (activeEditorView === view) {
@@ -656,17 +671,20 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
+    const syncLang = languageForFilename(filename)
+    langLoadTokenRef.current++ // invalidate any in-flight async load for the previous file
     const current = view.state.doc.toString()
     if (current !== value) {
       isApplyingExternalUpdateRef.current = true // suppress the onChange echo for this replace
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
-        effects: languageComp.current.reconfigure(languageForFilename(filename)),
+        effects: languageComp.current.reconfigure(syncLang),
         annotations: ProgrammaticDoc.of(true), // path swap — not a user edit
       })
     } else {
-      view.dispatch({ effects: languageComp.current.reconfigure(languageForFilename(filename)) })
+      view.dispatch({ effects: languageComp.current.reconfigure(syncLang) })
     }
+    if (syncLang.length === 0) applyAsyncLanguage(view, filename)
     if (!findOpen) view.focus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
