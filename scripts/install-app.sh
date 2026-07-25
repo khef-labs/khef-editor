@@ -4,13 +4,13 @@
 # freshly installed build.
 #
 # Usage:
-#   npm run install:app             # fast: packages for THIS machine's architecture only
-#   npm run install:app:universal   # universal (arm64 + x64); runs native on both, ~2x size/time
+#   npm run install:app          # universal (arm64 + x64); runs native on both, ~2x size/time
+#   npm run install:app:native   # fast: packages for THIS machine's architecture only
 #
-# Prefer the universal build when the resulting .app will be copied to another Mac of a
-# different architecture — a single-arch app copied across arches runs under Rosetta (slow)
-# or not at all. Note: building under a Rosetta terminal makes electron-builder infer x64;
-# the universal target sidesteps that by producing both slices regardless of the shell arch.
+# Universal is the default so the installed .app can be copied to any Mac — a single-arch
+# app copied across arches runs under Rosetta (slow) or not at all. Note: building under a
+# Rosetta terminal makes electron-builder infer x64; the universal target sidesteps that by
+# producing both slices regardless of the shell arch. Use --native for quick local iteration.
 #
 # The app is unsigned (electron-builder runs with identity=null), so this also clears
 # the quarantine flag on the installed bundle to avoid a Gatekeeper prompt.
@@ -20,11 +20,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# --universal → build both arch slices into one bundle (dist-app/mac-universal/).
-UNIVERSAL=0
+# Universal (both arch slices, dist-app/mac-universal/) is the default.
+# --native → this machine's architecture only. --universal is accepted for back-compat.
+UNIVERSAL=1
 for arg in "$@"; do
   case "$arg" in
     --universal) UNIVERSAL=1 ;;
+    --native) UNIVERSAL=0 ;;
     *) echo "khef-editor: unknown argument '$arg'" >&2; exit 2 ;;
   esac
 done
