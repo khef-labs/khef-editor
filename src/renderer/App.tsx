@@ -568,12 +568,11 @@ export function App() {
     })
   }, [])
 
-  // Open a rendered Markdown/Mermaid preview of the focused file in a split to the side.
+  // Open a rendered Markdown/Mermaid preview of a tab in a split to the side.
   // If a preview of this file is already open, just focus it.
-  const openPreviewToSide = useCallback(() => {
-    const leafId = activeLeafIdRef.current
+  const openPreviewForTab = useCallback((leafId: string, path: string) => {
     const leaf = findLeaf(treeRef.current, leafId)
-    const src = leaf?.tabs.find((t) => t.path === leaf.activePath)
+    const src = leaf?.tabs.find((t) => t.path === path)
     if (!src || src.kind === 'preview' || !isPreviewable(src.name)) return
     const previewPath = `preview://${src.path}`
     // Already open somewhere? Focus that pane/tab.
@@ -599,6 +598,12 @@ export function App() {
       return res.tree
     })
   }, [])
+
+  // Keyboard entry point (Cmd+Shift+V): preview the focused pane's active tab.
+  const openPreviewToSide = useCallback(() => {
+    const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
+    if (leaf?.activePath) openPreviewForTab(leaf.id, leaf.activePath)
+  }, [openPreviewForTab])
 
   const closeFocusedPane = useCallback(() => {
     setTree((prev) => {
@@ -901,6 +906,7 @@ export function App() {
           { kind: 'item', label: 'Keep Open', disabled: !menuTab.ephemeral, onClick: () => promoteTab(menuLeaf.id, menuTab.path) },
           { kind: 'separator' },
           { kind: 'item', label: 'Split Right', onClick: () => splitRightWithTab(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Open Preview', hint: '⇧⌘V', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path) },
         ]
         return <ContextMenu x={tabMenu.x} y={tabMenu.y} entries={entries} onClose={() => setTabMenu(null)} />
       })()}
