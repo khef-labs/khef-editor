@@ -58,6 +58,15 @@
     "node": ">=22",
     "npm": ">=10"
   },
+  "overrides": {
+    "@electron/asar": "^4.2.1",
+    "@electron/universal": "^3.0.6",
+    "dir-compare": "^5.0.0",
+    "filelist": "^2.0.2",
+    "electron-winstaller": {
+      "temp": "file:./stubs/temp"
+    }
+  },
   "build": {
     "appId": "ai.khef.editor",
     "productName": "Khef Editor",

@@ -1,0 +1,6 @@
+{
+  "name": "temp-stub",
+  "version": "0.0.0",
+  "description": "Empty stand-in for `temp`, overridden under electron-winstaller (see package.json overrides). The real temp pins rimraf@2 -> glob@7 -> minimatch@3 -> vulnerable brace-expansion, and is only ever loaded when building Windows Squirrel installers, which this mac-only project never does.",
+  "main": "index.js"
+}
