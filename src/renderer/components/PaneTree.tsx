@@ -48,7 +48,11 @@ function Split({ split, ...props }: PaneTreeProps & { split: SplitNode }) {
             <Divider
               orientation={split.orientation}
               onDrag={(deltaFrac) => {
-                // Adjust the boundary between child i-1 and i.
+                // Adjust the boundary between child i-1 and i. `deltaFrac` is CUMULATIVE
+                // from gesture start, and this closure is captured once per gesture (at
+                // pointerdown), so `split.sizes` here is the gesture-start baseline — the
+                // commits during the drag don't feed back into the calculation. Baseline +
+                // cumulative delta = correct absolute sizes on every move event.
                 const sizes = [...split.sizes]
                 const min = 0.05
                 let left = sizes[i - 1] + deltaFrac
@@ -72,6 +76,10 @@ function Split({ split, ...props }: PaneTreeProps & { split: SplitNode }) {
 
 interface DividerProps {
   orientation: 'row' | 'column'
+  // Cumulative fraction moved since the gesture started (NOT an increment). The handler
+  // is captured at pointerdown, so it applies this to the gesture-start sizes; reporting
+  // increments instead would make each move recompute from that stale baseline and the
+  // divider would snap back toward its start position on every event.
   onDrag: (deltaFraction: number) => void
 }
 
@@ -91,9 +99,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
 
     const onMove = (ev: PointerEvent) => {
       const pos = isRow ? ev.clientX : ev.clientY
-      const deltaPx = pos - startRef.current
-      startRef.current = pos
-      onDrag(deltaPx / extentRef.current)
+      onDrag((pos - startRef.current) / extentRef.current)
     }
     const onUp = (ev: PointerEvent) => {
       target.releasePointerCapture(ev.pointerId)
