@@ -363,6 +363,15 @@ function registerFsIpc() {
     return { path: target, mtimeMs: st.mtimeMs, size: st.size }
   })
 
+  // Create a directory (recursive). Uses write-resolution so the new path must land
+  // inside the workspace root, same confinement as fs:write.
+  ipcMain.handle('fs:mkdir', async (event, requestedPath) => {
+    assertString(requestedPath, 'path')
+    const target = await ws.resolveForWrite(event.sender.id, requestedPath)
+    await fsp.mkdir(target, { recursive: true })
+    return { path: target }
+  })
+
   // List a directory tree to a bounded depth.
   ipcMain.handle('fs:tree', async (event, requestedPath, depth) => {
     const wcId = event.sender.id

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
-import { Files, Search as SearchIcon, GitBranch, Settings } from 'lucide-preact'
+import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus } from 'lucide-preact'
 import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
-import { FileTree } from './components/FileTree'
+import { FileTree, NewEntryRow } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SearchPanel } from './components/SearchPanel'
@@ -31,6 +31,14 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [treeRefreshToken, setTreeRefreshToken] = useState(0)
+  // Explorer folder expansion, controlled here so the header button can collapse or
+  // expand everything at once. Holds absolute dir paths.
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set())
+  // Last-clicked Explorer row. New File / New Folder create inside this folder (or the
+  // selected file's parent folder), like VS Code.
+  const [treeSelected, setTreeSelected] = useState<{ path: string; type: 'file' | 'directory' } | null>(null)
+  // Inline "New File" / "New Folder" input: kind + the absolute dir it creates in.
+  const [newEntry, setNewEntry] = useState<{ kind: 'file' | 'dir'; dir: string } | null>(null)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -135,6 +143,7 @@ export function App() {
 
   const loadWorkspaceTree = useCallback(async (rootPath: string, revealExplorer: boolean) => {
     const t = await window.editorApi.tree(rootPath, 1)
+    if (rootPath !== rootRef.current) { setExpandedDirs(new Set()); setTreeSelected(null); setNewEntry(null) } // new workspace → fresh tree state
     setRoot(rootPath)
     setRootName(rootPath.split('/').filter(Boolean).pop() ?? rootPath)
     setEntries(t.entries)
@@ -144,6 +153,62 @@ export function App() {
       setSidebarCollapsed(false)
     }
   }, [])
+
+  const toggleDir = useCallback((path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }, [])
+
+  const selectTreeEntry = useCallback((entry: FsTreeEntry) => {
+    setTreeSelected({ path: entry.path, type: entry.type === 'directory' ? 'directory' : 'file' })
+  }, [])
+
+  // Start inline creation. Target dir: the selected folder, or the selected file's
+  // parent folder, or the workspace root. The target folder is expanded so the input
+  // row (rendered as its first child) is visible.
+  const startNewEntry = useCallback((kind: 'file' | 'dir') => {
+    const rootPath = rootRef.current
+    if (!rootPath) return
+    const sel = treeSelected
+    let dir = rootPath
+    if (sel) {
+      dir = sel.type === 'directory' ? sel.path : sel.path.slice(0, sel.path.lastIndexOf('/'))
+      if (!dir.startsWith(rootPath)) dir = rootPath
+    }
+    if (dir !== rootPath) setExpandedDirs((prev) => (prev.has(dir) ? prev : new Set(prev).add(dir)))
+    setNewEntry({ kind, dir })
+  }, [treeSelected])
+
+  // Explorer header collapse/expand toggle: anything expanded → collapse all; fully
+  // collapsed → expand all. Expand walks a bounded-depth tree fetch for dir paths; each
+  // expanded node then lazy-loads its children through the normal confined tree IPC.
+  const collapseOrExpandAll = useCallback(async () => {
+    if (!rootRef.current) return
+    if (expandedDirs.size > 0) {
+      setExpandedDirs(new Set())
+      return
+    }
+    try {
+      const deep = await window.editorApi.tree(rootRef.current, 32)
+      const dirs = new Set<string>()
+      const walk = (list: FsTreeEntry[]) => {
+        for (const e of list) {
+          if (e.type === 'directory') {
+            dirs.add(e.path)
+            if (e.children) walk(e.children)
+          }
+        }
+      }
+      walk(deep.entries)
+      setExpandedDirs(dirs)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [expandedDirs])
 
   // Cmd+R reloads only the renderer; the main process still owns this window's workspace
   // root. Rehydrate the Explorer from that per-window root so reload does not blank the app.
@@ -272,6 +337,32 @@ export function App() {
     }
     void openPath(entry.path, entry.name)
   }, [openPath])
+
+  // Create the file/folder named in the Explorer's inline input, inside newEntry.dir.
+  // Nested names ("a/b.ts") work — fs:write and fs:mkdir both create intermediate
+  // directories, and both are confined to the workspace root by the main process.
+  const submitNewEntry = useCallback(async (rawName: string) => {
+    const pending = newEntry
+    setNewEntry(null)
+    const name = rawName.trim().replace(/^\/+|\/+$/g, '')
+    const rootPath = rootRef.current
+    if (!pending || !name || !rootPath) return
+    setError(null)
+    const target = `${pending.dir}/${name}`
+    try {
+      if (pending.kind === 'dir') {
+        await window.editorApi.createDir(target)
+      } else {
+        // Never truncate an existing file: if it reads, it exists — just open it.
+        const exists = await window.editorApi.readFile(target).then(() => true, () => false)
+        if (!exists) await window.editorApi.writeFile(target, '')
+        openFilePermanent({ name: name.split('/').pop() ?? name, path: target, type: 'file' })
+      }
+      await loadWorkspaceTree(rootPath, false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [newEntry, openFilePermanent, loadWorkspaceTree])
 
   // Promote a tab to permanent (double-click the tab). No-op for preview/diff tabs.
   const promoteTab = useCallback((leafId: string, path: string) => {
@@ -795,8 +886,44 @@ export function App() {
           />
           {root ? (
             <>
-              <div class="explorer-root">{rootName}</div>
-              <FileTree entries={entries} activePath={treeActivePath} refreshToken={treeRefreshToken} onOpenFile={openFile} onOpenFilePermanent={openFilePermanent} />
+              <div class="explorer-root">
+                <span class="explorer-root-name">{rootName}</span>
+                <span class="explorer-actions">
+                  <button class="explorer-act" title="New File" onClick={() => startNewEntry('file')}>
+                    <FilePlus size={15} />
+                  </button>
+                  <button class="explorer-act" title="New Folder" onClick={() => startNewEntry('dir')}>
+                    <FolderPlus size={15} />
+                  </button>
+                  <button class="explorer-act" title="Refresh Explorer" onClick={() => root && void loadWorkspaceTree(root, false)}>
+                    <RefreshCw size={15} />
+                  </button>
+                  <button
+                    class="explorer-act"
+                    title={expandedDirs.size > 0 ? 'Collapse Folders in Explorer' : 'Expand Folders in Explorer'}
+                    onClick={() => void collapseOrExpandAll()}
+                  >
+                    {expandedDirs.size > 0 ? <CopyMinus size={15} /> : <CopyPlus size={15} />}
+                  </button>
+                </span>
+              </div>
+              {newEntry && newEntry.dir === root && (
+                <NewEntryRow kind={newEntry.kind} indent={8} onSubmit={(name) => void submitNewEntry(name)} onCancel={() => setNewEntry(null)} />
+              )}
+              <FileTree
+                entries={entries}
+                activePath={treeActivePath}
+                selectedPath={treeSelected?.path ?? null}
+                refreshToken={treeRefreshToken}
+                expandedDirs={expandedDirs}
+                newEntry={newEntry}
+                onToggleDir={toggleDir}
+                onSelect={selectTreeEntry}
+                onOpenFile={openFile}
+                onOpenFilePermanent={openFilePermanent}
+                onSubmitNewEntry={(name) => void submitNewEntry(name)}
+                onCancelNewEntry={() => setNewEntry(null)}
+              />
             </>
           ) : (
             <div class="sidebar-empty">

@@ -181,6 +181,7 @@ export interface EditorApi {
   readLooseFile(filePath: string): Promise<ReadFileResult>
   saveAs(content: string, suggestedName: string): Promise<SaveAsResult | null>
   tree(dirPath?: string | null, depth?: number): Promise<TreeResult>
+  createDir(dirPath: string): Promise<{ path: string }>
   listFiles(): Promise<ListFilesResult>
   search(query: string, options?: SearchOptions): Promise<SearchResult>
   replaceAll(query: string, replacement: string, options?: SearchOptions): Promise<ReplaceResult>
