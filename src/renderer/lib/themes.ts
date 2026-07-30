@@ -104,4 +104,8 @@ export function applyTheme(theme: Theme): void {
     const v = theme.vars[key]
     if (v) root.style.setProperty(key, v)
   }
+  // Tell the OS/Chromium which scheme the UI is, so anything natively rendered
+  // (always-visible scrollbars with a mouse attached, form controls) comes out dark
+  // on dark themes instead of opaque white bars over the UI.
+  root.style.colorScheme = theme.id === 'light-plus' ? 'light' : 'dark'
 }

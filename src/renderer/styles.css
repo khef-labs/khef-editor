@@ -22,9 +22,29 @@
   --cursor-overview: #a0a0a0;        /* right-edge cursor position marker */
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+  /* Default scheme; applyTheme() overrides per theme. Without this, natively-rendered
+     chrome (always-visible scrollbars when a mouse is attached) draws LIGHT — opaque
+     white bars over the dark UI, covering tabs and pane edges. */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+
+/* Every scroll container gets the same slim custom scrollbar, so macOS "always show
+   scroll bars" (auto-on when a mouse is attached) can never overlay content with native
+   white bars. Styling ::-webkit-scrollbar also makes the bars non-overlay. More specific
+   rules (.cm-scroller, .pane-root, .tabbar-tabs) still win where they declare their own. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  min-height: 30px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: content-box; }
 
 html, body, #app {
   margin: 0;
@@ -34,6 +54,10 @@ html, body, #app {
   font-family: var(--font-ui);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  /* The app shell owns all scrolling. Without this, an element poking past the viewport
+     (context menu near an edge, find widget) gives the DOCUMENT a native scrollbar that
+     paints over the bottom/right of the UI and lets the whole shell shift on scroll. */
+  overflow: hidden;
 }
 
 /* Grid: [activitybar | sidebar | editor] over a full-width statusbar */
@@ -408,6 +432,9 @@ html, body, #app {
   flex: 1;
   min-width: 0;
 }
+/* No scrollbar on the tab row — a bar here overlays the tab labels. The row still
+   scrolls with trackpad/wheel gestures when there are more tabs than fit. */
+.tabbar-tabs::-webkit-scrollbar { display: none; }
 .tabbar-action {
   flex: 0 0 auto;
   display: flex;
