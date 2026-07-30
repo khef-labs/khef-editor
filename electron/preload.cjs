@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   search: (query, options) => ipcRenderer.invoke('fs:search', query, options ?? {}),
   replaceAll: (query, replacement, options) => ipcRenderer.invoke('fs:replaceAll', query, replacement, options ?? {}),
   deletePath: (targetPath) => ipcRenderer.invoke('fs:delete', targetPath),
+  renamePath: (targetPath, newPath) => ipcRenderer.invoke('fs:rename', targetPath, newPath),
   revealInFinder: (filePath) => ipcRenderer.invoke('fs:reveal', filePath),
 
   // Settings

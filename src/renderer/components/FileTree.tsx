@@ -20,12 +20,17 @@ interface FileTreeProps {
   // When set to a dir shown in this tree, an inline name input renders as that
   // folder's first child. (The workspace-root case is rendered by App above the tree.)
   newEntry: NewEntrySpec | null
+  // Path currently being renamed inline (its label becomes an input), or null.
+  renameTarget: string | null
   onToggleDir: (path: string) => void
   onSelect: (entry: FsTreeEntry) => void
   onOpenFile: (entry: FsTreeEntry) => void
   onOpenFilePermanent: (entry: FsTreeEntry) => void
+  onRowContextMenu: (entry: FsTreeEntry, e: MouseEvent) => void
   onSubmitNewEntry: (name: string) => void
   onCancelNewEntry: () => void
+  onSubmitRename: (name: string) => void
+  onCancelRename: () => void
 }
 
 export function FileTree(props: FileTreeProps) {
@@ -66,7 +71,7 @@ export function NewEntryRow({ kind, indent, onSubmit, onCancel }: {
 type TreeNodeProps = Omit<FileTreeProps, 'entries'> & { entry: FsTreeEntry; depth: number }
 
 function TreeNode(props: TreeNodeProps) {
-  const { entry, depth, activePath, selectedPath, refreshToken, expandedDirs, newEntry, onToggleDir, onSelect, onOpenFile, onOpenFilePermanent, onSubmitNewEntry, onCancelNewEntry } = props
+  const { entry, depth, activePath, selectedPath, refreshToken, expandedDirs, newEntry, renameTarget, onToggleDir, onSelect, onOpenFile, onOpenFilePermanent, onRowContextMenu, onSubmitNewEntry, onCancelNewEntry, onSubmitRename, onCancelRename } = props
   const [children, setChildren] = useState<FsTreeEntry[] | null>(entry.children ?? null)
   const [loading, setLoading] = useState(false)
 
@@ -122,6 +127,7 @@ function TreeNode(props: TreeNodeProps) {
         style={{ paddingLeft: `${indent}px` }}
         onClick={() => void toggle()}
         onDblClick={onDblClick}
+        onContextMenu={(e) => { e.preventDefault(); onSelect(entry); onRowContextMenu(entry, e) }}
         data-testid={`tree-row-${entry.name}`}
       >
         <span class="tree-twisty">
@@ -138,7 +144,21 @@ function TreeNode(props: TreeNodeProps) {
             <File size={14} />
           )}
         </span>
-        <span class="tree-label">{entry.name}</span>
+        {renameTarget === entry.path ? (
+          <input
+            class="explorer-new-input"
+            ref={(el) => { if (el && document.activeElement !== el) { el.value = entry.name; el.focus(); el.select() } }}
+            onClick={(e) => e.stopPropagation()}
+            onDblClick={(e) => e.stopPropagation()}
+            onBlur={onCancelRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSubmitRename((e.currentTarget as HTMLInputElement).value)
+              else if (e.key === 'Escape') onCancelRename()
+            }}
+          />
+        ) : (
+          <span class="tree-label">{entry.name}</span>
+        )}
       </div>
       {isDir && expanded && (
         <div>

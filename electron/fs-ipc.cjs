@@ -396,7 +396,8 @@ function registerFsIpc() {
     return { files: out, truncated: out.length >= MAX_FILE_LIST }
   })
 
-  // Delete a file or empty/recursive directory. Confined to the window's root.
+  // Delete a file or directory by moving it to the Trash (recoverable, unlike rm).
+  // Confined to the window's root.
   ipcMain.handle('fs:delete', async (event, requestedPath) => {
     const wcId = event.sender.id
     assertString(requestedPath, 'path')
@@ -404,8 +405,26 @@ function registerFsIpc() {
     if (real === ws.getWorkspaceRoot(wcId)) {
       throw new Error('Refusing to delete the workspace root')
     }
-    await fsp.rm(real, { recursive: true, force: false })
+    await shell.trashItem(real)
     return { path: real, deleted: true }
+  })
+
+  // Rename/move a file or directory. Source must exist inside the root; the target goes
+  // through write-resolution so it must also land inside the root. Refuses to clobber an
+  // existing target.
+  ipcMain.handle('fs:rename', async (event, requestedPath, newPath) => {
+    const wcId = event.sender.id
+    assertString(requestedPath, 'path')
+    assertString(newPath, 'newPath')
+    const source = await ws.resolveExisting(wcId, requestedPath)
+    if (source === ws.getWorkspaceRoot(wcId)) {
+      throw new Error('Refusing to rename the workspace root')
+    }
+    const target = await ws.resolveForWrite(wcId, newPath)
+    if (fs.existsSync(target)) throw new Error(`Already exists: ${path.basename(target)}`)
+    await fsp.mkdir(path.dirname(target), { recursive: true })
+    await fsp.rename(source, target)
+    return { path: target }
   })
 }
 

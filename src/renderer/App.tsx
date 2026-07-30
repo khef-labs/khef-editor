@@ -39,6 +39,10 @@ export function App() {
   const [treeSelected, setTreeSelected] = useState<{ path: string; type: 'file' | 'directory' } | null>(null)
   // Inline "New File" / "New Folder" input: kind + the absolute dir it creates in.
   const [newEntry, setNewEntry] = useState<{ kind: 'file' | 'dir'; dir: string } | null>(null)
+  // Explorer right-click menu target + position.
+  const [treeMenu, setTreeMenu] = useState<{ entry: FsTreeEntry; x: number; y: number } | null>(null)
+  // Row being renamed inline in the Explorer.
+  const [renameTarget, setRenameTarget] = useState<{ path: string; type: 'file' | 'directory' } | null>(null)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -143,7 +147,7 @@ export function App() {
 
   const loadWorkspaceTree = useCallback(async (rootPath: string, revealExplorer: boolean) => {
     const t = await window.editorApi.tree(rootPath, 1)
-    if (rootPath !== rootRef.current) { setExpandedDirs(new Set()); setTreeSelected(null); setNewEntry(null) } // new workspace → fresh tree state
+    if (rootPath !== rootRef.current) { setExpandedDirs(new Set()); setTreeSelected(null); setNewEntry(null); setTreeMenu(null); setRenameTarget(null) } // new workspace → fresh tree state
     setRoot(rootPath)
     setRootName(rootPath.split('/').filter(Boolean).pop() ?? rootPath)
     setEntries(t.entries)
@@ -363,6 +367,161 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [newEntry, openFilePermanent, loadWorkspaceTree])
+
+  // "Open to the Side" from the Explorer menu: the file opens in a new pane to the
+  // right. If it's already open in some pane, clone that tab (keeps unsaved content);
+  // otherwise read it from disk.
+  const openTreeFileToSide = useCallback(async (entry: FsTreeEntry) => {
+    setError(null)
+    try {
+      let tab: OpenTab | null = null
+      for (const l of leaves(treeRef.current)) {
+        const t = l.tabs.find((x) => x.path === entry.path && (x.kind === undefined || x.kind === 'editor'))
+        if (t) { tab = { ...t, ephemeral: undefined }; break }
+      }
+      if (!tab) {
+        const f = await window.editorApi.readFile(entry.path)
+        tab = { path: entry.path, name: entry.name, content: f.content, savedContent: f.content }
+      }
+      setTree((prev) => {
+        const res = splitLeafWithTab(prev, activeLeafIdRef.current, 'row', tab as OpenTab)
+        if (!res) return prev
+        setActiveLeafId(res.newLeafId)
+        return res.tree
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  // "Open Preview" from the Explorer menu. A preview never floats alone: if the file
+  // isn't open anywhere, open it in the focused pane first, then split the preview to
+  // its side (same layout Cmd+Shift+V produces). If a preview of the file is already
+  // open, just focus it.
+  const openTreeFilePreview = useCallback(async (entry: FsTreeEntry) => {
+    setError(null)
+    const previewPath = `preview://${entry.path}`
+    for (const l of leaves(treeRef.current)) {
+      if (l.tabs.some((t) => t.path === previewPath)) {
+        setActiveLeafId(l.id)
+        setTree((prev) => updateLeaf(prev, l.id, (x) => ({ ...x, activePath: previewPath })))
+        return
+      }
+    }
+    try {
+      let content: string | null = null
+      for (const l of leaves(treeRef.current)) {
+        const t = l.tabs.find((x) => x.path === entry.path && (x.kind === undefined || x.kind === 'editor'))
+        if (t) { content = t.content; break }
+      }
+      if (content == null) {
+        // Not open anywhere: open the source file in the focused pane first, so the
+        // preview sits next to a real editor for the same file.
+        const f = await window.editorApi.readFile(entry.path)
+        content = f.content
+        const fileTab: OpenTab = { path: entry.path, name: entry.name, content: f.content, savedContent: f.content }
+        setTree((prev) => updateLeaf(prev, activeLeafIdRef.current, (l) => ({
+          ...l,
+          tabs: l.tabs.some((t) => t.path === entry.path) ? l.tabs : [...l.tabs, fileTab],
+          activePath: entry.path,
+        })))
+      }
+      const previewTab: OpenTab = {
+        path: previewPath,
+        name: `Preview ${entry.name}`,
+        content,
+        savedContent: content,
+        kind: 'preview',
+        sourcePath: entry.path,
+      }
+      setTree((prev) => {
+        const res = splitLeafWithTab(prev, activeLeafIdRef.current, 'row', previewTab)
+        if (!res) return prev
+        setActiveLeafId(res.newLeafId)
+        return res.tree
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
+
+  // Rewrite tab/leaf paths after a rename so open editors follow the file (and, for a
+  // folder rename, everything under it — including previews via sourcePath).
+  const rewritePathsAfterRename = useCallback((oldPath: string, newPath: string, isDir: boolean) => {
+    const mapPath = (p: string): string => {
+      if (p.startsWith('preview://')) {
+        const src = p.slice('preview://'.length)
+        return `preview://${mapPath(src)}`
+      }
+      if (p === oldPath || (isDir && p.startsWith(oldPath + '/'))) return newPath + p.slice(oldPath.length)
+      return p
+    }
+    setTree((prev) => mapLeaves(prev, (l) => {
+      let changed = false
+      const tabs = l.tabs.map((t) => {
+        const np = mapPath(t.path)
+        const nsp = t.sourcePath ? mapPath(t.sourcePath) : t.sourcePath
+        if (np === t.path && nsp === t.sourcePath) return t
+        changed = true
+        const base = (nsp ?? np).split('/').pop() ?? t.name
+        return { ...t, path: np, sourcePath: nsp, name: t.kind === 'preview' ? `Preview ${base}` : base }
+      })
+      const activePath = l.activePath ? mapPath(l.activePath) : l.activePath
+      return changed || activePath !== l.activePath ? { ...l, tabs, activePath } : l
+    }))
+    if (isDir) {
+      setExpandedDirs((prev) => {
+        const next = new Set<string>()
+        for (const p of prev) next.add(p === oldPath || p.startsWith(oldPath + '/') ? newPath + p.slice(oldPath.length) : p)
+        return next
+      })
+    }
+    setTreeSelected((prev) => (prev && (prev.path === oldPath || (isDir && prev.path.startsWith(oldPath + '/')))
+      ? { ...prev, path: newPath + prev.path.slice(oldPath.length) }
+      : prev))
+  }, [])
+
+  const submitRename = useCallback(async (rawName: string) => {
+    const target = renameTarget
+    setRenameTarget(null)
+    const name = rawName.trim()
+    const rootPath = rootRef.current
+    if (!target || !name || !rootPath || name.includes('/')) return
+    const parent = target.path.slice(0, target.path.lastIndexOf('/'))
+    const newPath = `${parent}/${name}`
+    if (newPath === target.path) return
+    setError(null)
+    try {
+      await window.editorApi.renamePath(target.path, newPath)
+      rewritePathsAfterRename(target.path, newPath, target.type === 'directory')
+      await loadWorkspaceTree(rootPath, false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [renameTarget, rewritePathsAfterRename, loadWorkspaceTree])
+
+  // Delete (move to Trash) from the Explorer menu, closing any tabs it invalidates.
+  const deleteTreeEntry = useCallback(async (entry: FsTreeEntry) => {
+    const isDir = entry.type === 'directory'
+    if (!window.confirm(`Move "${entry.name}" to the Trash?`)) return
+    setError(null)
+    try {
+      await window.editorApi.deletePath(entry.path)
+      const gone = (p: string | undefined | null): boolean =>
+        !!p && (p === entry.path || (isDir && p.startsWith(entry.path + '/')) || p === `preview://${entry.path}` ||
+          (isDir && p.startsWith(`preview://${entry.path}/`)))
+      setTree((prev) => mapLeaves(prev, (l) => {
+        const keep = l.tabs.filter((t) => !gone(t.path) && !gone(t.sourcePath))
+        if (keep.length === l.tabs.length) return l
+        const activePath = keep.some((t) => t.path === l.activePath) ? l.activePath : (keep[keep.length - 1]?.path ?? null)
+        return { ...l, tabs: keep, activePath }
+      }))
+      setTreeSelected((prev) => (prev && gone(prev.path) ? null : prev))
+      if (rootRef.current) await loadWorkspaceTree(rootRef.current, false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [loadWorkspaceTree])
 
   // Promote a tab to permanent (double-click the tab). No-op for preview/diff tabs.
   const promoteTab = useCallback((leafId: string, path: string) => {
@@ -917,12 +1076,16 @@ export function App() {
                 refreshToken={treeRefreshToken}
                 expandedDirs={expandedDirs}
                 newEntry={newEntry}
+                renameTarget={renameTarget?.path ?? null}
                 onToggleDir={toggleDir}
                 onSelect={selectTreeEntry}
                 onOpenFile={openFile}
                 onOpenFilePermanent={openFilePermanent}
+                onRowContextMenu={(entry, e) => setTreeMenu({ entry, x: e.clientX, y: e.clientY })}
                 onSubmitNewEntry={(name) => void submitNewEntry(name)}
                 onCancelNewEntry={() => setNewEntry(null)}
+                onSubmitRename={(name) => void submitRename(name)}
+                onCancelRename={() => setRenameTarget(null)}
               />
             </>
           ) : (
@@ -1036,6 +1199,37 @@ export function App() {
           { kind: 'item', label: 'Open Preview', hint: '⇧⌘V', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path) },
         ]
         return <ContextMenu x={tabMenu.x} y={tabMenu.y} entries={entries} onClose={() => setTabMenu(null)} />
+      })()}
+
+      {treeMenu && (() => {
+        const t = treeMenu.entry
+        const isDir = t.type === 'directory'
+        const relPath = root && t.path.startsWith(root + '/') ? t.path.slice(root.length + 1) : t.path
+        const copyEntries: MenuEntry[] = [
+          { kind: 'item', label: 'Reveal in Finder', onClick: () => {
+              window.editorApi.revealInFinder(t.path).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+            } },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Copy Path', onClick: () => void navigator.clipboard.writeText(t.path) },
+          { kind: 'item', label: 'Copy Relative Path', onClick: () => void navigator.clipboard.writeText(relPath) },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Rename…', onClick: () => setRenameTarget({ path: t.path, type: isDir ? 'directory' : 'file' }) },
+          { kind: 'item', label: 'Delete', onClick: () => void deleteTreeEntry(t) },
+        ]
+        const entries: MenuEntry[] = isDir
+          ? [
+              { kind: 'item', label: 'New File…', onClick: () => startNewEntry('file') },
+              { kind: 'item', label: 'New Folder…', onClick: () => startNewEntry('dir') },
+              { kind: 'separator' },
+              ...copyEntries,
+            ]
+          : [
+              { kind: 'item', label: 'Open Preview', disabled: !isPreviewable(t.name), onClick: () => void openTreeFilePreview(t) },
+              { kind: 'item', label: 'Open to the Side', onClick: () => void openTreeFileToSide(t) },
+              { kind: 'separator' },
+              ...copyEntries,
+            ]
+        return <ContextMenu x={treeMenu.x} y={treeMenu.y} entries={entries} onClose={() => setTreeMenu(null)} />
       })()}
     </div>
   )
