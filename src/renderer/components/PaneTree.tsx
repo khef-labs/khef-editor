@@ -15,6 +15,8 @@ interface PaneTreeProps {
   onUserEdit: (leafId: string, path: string) => void
   onPromoteTab: (leafId: string, path: string) => void
   onTabContextMenu: (leafId: string, path: string, e: MouseEvent) => void
+  onPreviewTab: (leafId: string, path: string) => void
+  onSplitRightTab: (leafId: string, path: string) => void
   onSave: (leafId: string, path: string, content?: string) => void
   onResize: (splitId: string, sizes: number[]) => void
   onOpenFolder?: () => void
@@ -119,7 +121,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -135,6 +137,8 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       onUserEdit={(path) => onUserEdit(leaf.id, path)}
       onPromoteTab={(path) => onPromoteTab(leaf.id, path)}
       onTabContextMenu={(path, e) => onTabContextMenu(leaf.id, path, e)}
+      onPreviewTab={(path) => onPreviewTab(leaf.id, path)}
+      onSplitRightTab={(path) => onSplitRightTab(leaf.id, path)}
       onSave={(path, content) => onSave(leaf.id, path, content)}
       onOpenFolder={onOpenFolder}
       onOpenFile={onOpenFile}

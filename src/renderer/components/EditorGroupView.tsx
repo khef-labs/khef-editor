@@ -17,6 +17,8 @@ interface EditorGroupViewProps {
   onUserEdit: (path: string) => void
   onPromoteTab: (path: string) => void
   onTabContextMenu: (path: string, e: MouseEvent) => void
+  onPreviewTab: (path: string) => void
+  onSplitRightTab: (path: string) => void
   onSave: (path: string, content?: string) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
@@ -27,7 +29,7 @@ interface EditorGroupViewProps {
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
-  onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onSave,
+  onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onSave,
   onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
@@ -46,6 +48,9 @@ export function EditorGroupView({
         onClose={onCloseTab}
         onPromote={onPromoteTab}
         onContextMenu={onTabContextMenu}
+        onPreview={() => { if (activeTab) onPreviewTab(activeTab.path) }}
+        onSplitRight={() => { if (activeTab) onSplitRightTab(activeTab.path) }}
+        onMore={(e) => { if (activeTab) onTabContextMenu(activeTab.path, e) }}
       />
       <div class="editor-body">
         {activeTab ? (

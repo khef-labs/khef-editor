@@ -1143,6 +1143,8 @@ export function App() {
               onUserEdit={editTab}
               onPromoteTab={promoteTab}
               onTabContextMenu={(leafId, path, e) => setTabMenu({ leafId, path, x: e.clientX, y: e.clientY })}
+              onPreviewTab={openPreviewForTab}
+              onSplitRightTab={splitRightWithTab}
               onSave={(leafId, path, content) => void saveTab(leafId, path, content)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}

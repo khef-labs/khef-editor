@@ -448,6 +448,11 @@ html, body, #app {
   cursor: pointer;
 }
 .tabbar-action:hover { color: var(--fg-bright); background: var(--row-hover); }
+.tabbar-action:disabled { color: var(--fg-dim); opacity: 0.35; cursor: default; }
+.tabbar-action:disabled:hover { background: none; color: var(--fg-dim); }
+/* Title-bar action cluster on the right edge of the tab row. */
+.tabbar-actions { flex: 0 0 auto; display: flex; align-items: stretch; margin-left: auto; }
+.tabbar-actions .tabbar-action { width: 30px; border-left: none; }
 /* Focused group gets a subtle accent on its tab strip. */
 .editor-group.focused .tabbar { box-shadow: inset 0 2px 0 var(--bg-statusbar); }
 .tab {
