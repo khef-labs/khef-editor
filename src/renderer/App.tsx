@@ -28,6 +28,7 @@ export function App() {
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm'>('explorer')
   const [scmRefresh, setScmRefresh] = useState(0)
   const [recentFolders, setRecentFolders] = useState<string[]>([])
+  const [recentFiles, setRecentFiles] = useState<string[]>([])
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [treeRefreshToken, setTreeRefreshToken] = useState(0)
@@ -76,6 +77,7 @@ export function App() {
       }
     }).catch(() => { applyTheme(themeById('dark-plus')) })
     void window.editorApi.recentFolders().then(setRecentFolders)
+    void window.editorApi.recentFiles().then(setRecentFiles)
   }, [])
 
   // Sidebar resize drag. Dragging clamps width to [MIN_W, MAX_W] and NEVER fully closes the
@@ -948,7 +950,10 @@ export function App() {
     const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
-    const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => { void window.editorApi.clearRecentFolders().then(setRecentFolders) })
+    const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => {
+      void window.editorApi.clearRecentFolders().then(setRecentFolders)
+      setRecentFiles([])
+    })
     return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
   }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
 
@@ -1152,6 +1157,8 @@ export function App() {
               onOpenSettings={() => setSettingsOpen(true)}
               recentFolders={recentFolders}
               onOpenRecent={(dir) => void openFolder(dir)}
+              recentFiles={recentFiles}
+              onOpenRecentFile={(p) => void window.editorApi.openRecentFile(p).catch((e) => setError(e instanceof Error ? e.message : String(e)))}
             />
           </div>
         )}

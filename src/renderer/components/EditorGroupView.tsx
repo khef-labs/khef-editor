@@ -25,12 +25,14 @@ interface EditorGroupViewProps {
   onOpenSettings?: () => void
   recentFolders?: string[]
   onOpenRecent?: (dir: string) => void
+  recentFiles?: string[]
+  onOpenRecentFile?: (filePath: string) => void
 }
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onSave,
-  onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent,
+  onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
 
@@ -76,16 +78,17 @@ export function EditorGroupView({
             />
           )
         ) : (
-          <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} recentFolders={recentFolders} onOpenRecent={onOpenRecent} />
+          <WelcomePane onOpenFolder={onOpenFolder} onOpenFile={onOpenFile} onOpenSettings={onOpenSettings} recentFolders={recentFolders} onOpenRecent={onOpenRecent} recentFiles={recentFiles} onOpenRecentFile={onOpenRecentFile} />
         )}
       </div>
     </section>
   )
 }
 
-function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent }: {
+function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }: {
   onOpenFolder?: () => void; onOpenFile?: () => void; onOpenSettings?: () => void
   recentFolders?: string[]; onOpenRecent?: (dir: string) => void
+  recentFiles?: string[]; onOpenRecentFile?: (filePath: string) => void
 }) {
   // Actions that make sense before a folder is open.
   const rows: { label: string; keys: string[]; onClick?: () => void }[] = [
@@ -94,6 +97,7 @@ function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings, recentFolders, 
     { label: 'Settings', keys: ['⌘', ','], onClick: onOpenSettings },
   ]
   const recents = (recentFolders ?? []).slice(0, 8)
+  const recentFileRows = (recentFiles ?? []).slice(0, 6)
   const home = '/Users/'
   const pretty = (p: string) => {
     const name = p.split('/').filter(Boolean).pop() ?? p
@@ -124,6 +128,24 @@ function WelcomePane({ onOpenFolder, onOpenFile, onOpenSettings, recentFolders, 
               return (
                 <li key={p}>
                   <button class="welcome-recent-row" title={p} onClick={() => onOpenRecent?.(p)}>
+                    <span class="welcome-recent-name">{name}</span>
+                    <span class="welcome-recent-dir">{dir}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+      {recentFileRows.length > 0 && (
+        <div class="welcome-recent">
+          <div class="welcome-recent-title">Recent Files</div>
+          <ul class="welcome-recent-list">
+            {recentFileRows.map((p) => {
+              const { name, dir } = pretty(p)
+              return (
+                <li key={p}>
+                  <button class="welcome-recent-row" title={p} onClick={() => onOpenRecentFile?.(p)}>
                     <span class="welcome-recent-name">{name}</span>
                     <span class="welcome-recent-dir">{dir}</span>
                   </button>

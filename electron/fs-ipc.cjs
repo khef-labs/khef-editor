@@ -11,7 +11,7 @@ const fsp = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
 const ws = require('./workspace.cjs')
-const { addRecentFolder } = require('./settings.cjs')
+const { addRecentFolder, addRecentFile } = require('./settings.cjs')
 
 // Set by main.cjs so opening a folder can rebuild the File → Open Recent menu.
 let onWorkspaceOpened = null
@@ -87,6 +87,7 @@ async function readLooseFileForWindow(wcId, filePath) {
   }
   const content = await fsp.readFile(real, 'utf8')
   looseSet(wcId).add(real)
+  void addRecentFile(real) // loose opens (dialog, Finder, ke/protocol launches) count as recent
   return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
 }
 
@@ -299,6 +300,7 @@ function registerFsIpc() {
       await fsp.mkdir(path.dirname(target), { recursive: true })
       await fsp.writeFile(target, content, 'utf8')
       const st = await fsp.stat(target)
+      void addRecentFile(target)
       return { path: target, name: path.basename(target), mtimeMs: st.mtimeMs, size: st.size, loose: false }
     }
 
@@ -309,6 +311,7 @@ function registerFsIpc() {
     const real = await fsp.realpath(selected)
     looseSet(wcId).add(real)
     const st = await fsp.stat(real)
+    void addRecentFile(real)
     return { path: real, name: path.basename(real), mtimeMs: st.mtimeMs, size: st.size, loose: true }
   })
 
@@ -346,6 +349,7 @@ function registerFsIpc() {
       throw new Error(`File too large (${st.size} bytes, max ${MAX_FILE_SIZE})`)
     }
     const content = await fsp.readFile(real, 'utf8')
+    void addRecentFile(real) // every workspace-file open lands here (tree, quick open, search)
     return { path: real, content, mtimeMs: st.mtimeMs, size: st.size }
   })
 

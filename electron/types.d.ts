@@ -191,6 +191,11 @@ export interface EditorApi {
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   recentFolders(): Promise<string[]>
+  recentFiles(): Promise<string[]>
+  // Open a file from the recents list (validated in main against that list); the opened
+  // file arrives back through the menu:open-launch flow.
+  openRecentFile(filePath: string): Promise<void>
+  // Clears both recent folders AND recent files.
   clearRecentFolders(): Promise<string[]>
   onWorkspaceChanged(handler: (payload: WorkspaceChangedPayload) => void): () => void
   git: GitApi

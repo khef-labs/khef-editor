@@ -24,6 +24,8 @@ interface PaneTreeProps {
   onOpenSettings?: () => void
   recentFolders?: string[]
   onOpenRecent?: (dir: string) => void
+  recentFiles?: string[]
+  onOpenRecentFile?: (filePath: string) => void
 }
 
 // Per-pane minimum size in px. Below this, panes stop shrinking and the editor area
@@ -121,7 +123,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -145,6 +147,8 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       onOpenSettings={onOpenSettings}
       recentFolders={recentFolders}
       onOpenRecent={onOpenRecent}
+      recentFiles={recentFiles}
+      onOpenRecentFile={onOpenRecentFile}
     />
   )
 }

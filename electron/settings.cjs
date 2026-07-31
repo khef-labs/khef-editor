@@ -12,6 +12,7 @@ const DEFAULTS = {
   theme: 'dark-plus',
   sidebarWidth: 300,
   recentFolders: [], // most-recent-first list of opened workspace roots
+  recentFiles: [], // most-recent-first list of files opened as editor tabs
 }
 
 const MAX_RECENT = 12
@@ -59,6 +60,23 @@ async function addRecentFolder(dir) {
   return next
 }
 
+async function getRecentFiles() {
+  const s = await load()
+  const list = Array.isArray(s.recentFiles) ? s.recentFiles : []
+  return list.filter((p) => typeof p === 'string')
+}
+
+// Record a file as most-recently-opened. Dedupes, moves to front, caps the list, and
+// notifies so the Open Recent menu rebuilds.
+async function addRecentFile(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return getRecentFiles()
+  const list = await getRecentFiles()
+  const next = [filePath, ...list.filter((p) => p !== filePath)].slice(0, MAX_RECENT)
+  await save({ recentFiles: next })
+  if (onRecentChange) onRecentChange()
+  return next
+}
+
 let onRecentChange = null
 function setRecentChangeHandler(fn) { onRecentChange = fn }
 
@@ -74,11 +92,14 @@ function registerSettingsIpc() {
     return save(allowed)
   })
   ipcMain.handle('recent:get', async () => getRecentFolders())
+  ipcMain.handle('recent:getFiles', async () => getRecentFiles())
+  // Clears BOTH recents lists (folders and files), matching VS Code's single
+  // "Clear Recently Opened" action.
   ipcMain.handle('recent:clear', async () => {
-    await save({ recentFolders: [] })
+    await save({ recentFolders: [], recentFiles: [] })
     if (onRecentChange) onRecentChange()
     return []
   })
 }
 
-module.exports = { registerSettingsIpc, DEFAULTS, getRecentFolders, addRecentFolder, setRecentChangeHandler }
+module.exports = { registerSettingsIpc, DEFAULTS, getRecentFolders, addRecentFolder, getRecentFiles, addRecentFile, setRecentChangeHandler }

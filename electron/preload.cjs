@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('editorApi', {
 
   // Recent folders
   recentFolders: () => ipcRenderer.invoke('recent:get'),
+  recentFiles: () => ipcRenderer.invoke('recent:getFiles'),
+  openRecentFile: (filePath) => ipcRenderer.invoke('recent:openFile', filePath),
   clearRecentFolders: () => ipcRenderer.invoke('recent:clear'),
   onWorkspaceChanged: (handler) => {
     const listener = (_event, payload) => handler(payload)

@@ -5,12 +5,12 @@
 // renderer is sandboxed and reaches disk only through the typed contextBridge surface.
 // Renderer hardening here is the highest-priority security control (design §7.3 #1).
 
-const { app, BrowserWindow, Menu, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, session, shell, ipcMain } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fsp = require('node:fs/promises')
 const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, clearWorkspaceWatch, readLooseFileForWindow } = require('./fs-ipc.cjs')
-const { registerSettingsIpc, getRecentFolders, setRecentChangeHandler } = require('./settings.cjs')
+const { registerSettingsIpc, getRecentFolders, getRecentFiles, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
 const ws = require('./workspace.cjs')
@@ -361,17 +361,26 @@ function installCsp() {
   })
 }
 
-function buildMenu(recentFolders = []) {
-  const recentSubmenu = recentFolders.length
+function buildMenu(recentFolders = [], recentFiles = []) {
+  // VS Code layout: folders first, then files, one Clear for both.
+  const pretty = (p) => p.replace(os.homedir(), '~')
+  const recentSubmenu = recentFolders.length || recentFiles.length
     ? [
         ...recentFolders.map((dir) => ({
-          label: dir.replace(os.homedir(), '~'),
+          label: pretty(dir),
           click: () => sendToFocused('menu:open-recent', dir),
+        })),
+        ...(recentFolders.length && recentFiles.length ? [{ type: 'separator' }] : []),
+        ...recentFiles.map((file) => ({
+          label: pretty(file),
+          // Same path as ke/protocol launches: main re-reads the file (loose gate) and
+          // pushes a menu:open-launch request. A stale entry is silently ignored.
+          click: () => void openLaunchRequest({ path: file }),
         })),
         { type: 'separator' },
         { label: 'Clear Recently Opened', click: () => sendToFocused('menu:clear-recent') },
       ]
-    : [{ label: 'No Recent Folders', enabled: false }]
+    : [{ label: 'No Recent Folders or Files', enabled: false }]
 
   const template = [
     {
@@ -484,9 +493,9 @@ function buildMenu(recentFolders = []) {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-// Rebuild the menu with the current Open Recent list.
+// Rebuild the menu with the current Open Recent lists.
 async function refreshMenu() {
-  try { buildMenu(await getRecentFolders()) } catch { buildMenu([]) }
+  try { buildMenu(await getRecentFolders(), await getRecentFiles()) } catch { buildMenu([], []) }
 }
 
 app.whenReady().then(() => {
@@ -503,9 +512,18 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerSearchIpc()
   registerGitIpc()
-  // Rebuild the Open Recent submenu whenever a folder opens or the list is cleared.
+  // Rebuild the Open Recent submenu whenever a folder opens or the lists change.
   setWorkspaceOpenedHandler(() => void refreshMenu())
   setRecentChangeHandler(() => void refreshMenu())
+  // Open a recent FILE from the renderer (welcome pane). The renderer supplies only a
+  // selection from the main-owned recents list — an arbitrary path is rejected, so this
+  // grants no new read authority beyond what the user already opened before.
+  ipcMain.handle('recent:openFile', async (_event, requestedPath) => {
+    if (typeof requestedPath !== 'string' || !requestedPath) throw new Error('path must be a non-empty string')
+    const known = await getRecentFiles()
+    if (!known.includes(requestedPath)) throw new Error('Not a recent file')
+    await openLaunchRequest({ path: requestedPath })
+  })
   void refreshMenu()
   createWindow()
 
