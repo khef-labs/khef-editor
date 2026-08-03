@@ -1074,6 +1074,26 @@ html, body, #app {
 .diff-num { flex: none; width: 44px; text-align: right; padding-right: 10px; color: var(--fg-dim); user-select: none; }
 .diff-text { flex: 1; min-width: 0; padding: 0 8px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* Unified (single-column, GitHub-style) rows: old-num | new-num | sign | text. */
+.diff-urow { display: flex; min-height: 18px; }
+.diff-sign { flex: none; width: 16px; text-align: center; user-select: none; color: var(--fg-dim); }
+.diff-urow.diff-add .diff-sign { color: #73c991; }
+.diff-urow.diff-del .diff-sign { color: #f14c4c; }
+
+/* Split/Unified layout toggle in the diff header. */
+.diff-mode-toggle { flex: none; display: flex; gap: 2px; align-items: center; padding: 2px 8px; }
+.diff-mode-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  background: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.diff-mode-btn:hover { color: var(--fg); background: var(--row-hover); }
+.diff-mode-btn.active { color: var(--fg-bright); background: var(--row-active); border-color: transparent; }
+
 /* Overview ruler: whole-file map of changed regions; click to jump. */
 .diff-ruler { flex: none; width: 14px; position: relative; border-left: 1px solid var(--border-soft); cursor: pointer; }
 .diff-marker { position: absolute; left: 2px; right: 2px; border-radius: 1px; pointer-events: none; }

@@ -92,6 +92,8 @@ export interface DeleteResult {
 export interface AppSettings {
   theme: string
   sidebarWidth: number
+  // Diff viewer layout: side-by-side ('split') or single-column GitHub-style ('unified').
+  diffMode?: 'split' | 'unified'
 }
 
 export interface GitInfo {

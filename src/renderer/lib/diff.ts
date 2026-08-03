@@ -13,6 +13,40 @@ export interface DiffRow {
   newText: string | null
 }
 
+// A row of the unified (single-column, GitHub-style) presentation of a diff.
+export interface UnifiedRow {
+  kind: 'same' | 'add' | 'del'
+  oldNum: number | null
+  newNum: number | null
+  text: string
+}
+
+// Flatten aligned side-by-side rows into unified rows. Within each contiguous changed
+// run, all removals come before all additions (GitHub hunk order); a 'mod' row
+// contributes one removal and one addition.
+export function toUnifiedRows(rows: DiffRow[]): UnifiedRow[] {
+  const out: UnifiedRow[] = []
+  let i = 0
+  while (i < rows.length) {
+    if (rows[i].kind === 'same') {
+      const r = rows[i]
+      out.push({ kind: 'same', oldNum: r.oldNum, newNum: r.newNum, text: r.oldText ?? '' })
+      i++
+      continue
+    }
+    const dels: UnifiedRow[] = []
+    const adds: UnifiedRow[] = []
+    while (i < rows.length && rows[i].kind !== 'same') {
+      const r = rows[i]
+      if (r.kind === 'del' || r.kind === 'mod') dels.push({ kind: 'del', oldNum: r.oldNum, newNum: null, text: r.oldText ?? '' })
+      if (r.kind === 'add' || r.kind === 'mod') adds.push({ kind: 'add', oldNum: null, newNum: r.newNum, text: r.newText ?? '' })
+      i++
+    }
+    out.push(...dels, ...adds)
+  }
+  return out
+}
+
 // Standard LCS table over two string arrays.
 function lcs(a: string[], b: string[]): number[][] {
   const m = a.length

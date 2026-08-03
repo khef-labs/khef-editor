@@ -11,6 +11,7 @@ const path = require('node:path')
 const DEFAULTS = {
   theme: 'dark-plus',
   sidebarWidth: 300,
+  diffMode: 'split', // diff viewer layout: 'split' (side-by-side) or 'unified' (GitHub-style)
   recentFolders: [], // most-recent-first list of opened workspace roots
   recentFiles: [], // most-recent-first list of files opened as editor tabs
 }
