@@ -464,6 +464,11 @@ function buildMenu(recentFolders = [], recentFiles = []) {
           click: () => sendToFocused('menu:preview-side'),
         },
         {
+          label: 'Search in Files',
+          accelerator: 'Shift+CmdOrCtrl+F',
+          click: () => sendToFocused('menu:search'),
+        },
+        {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+B',
           click: () => sendToFocused('menu:toggle-sidebar'),

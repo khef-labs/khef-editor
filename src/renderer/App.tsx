@@ -140,6 +140,15 @@ export function App() {
     setSidebarCollapsed((v) => !v)
   }, [])
 
+  // Cmd+Shift+F: open the Search view and focus its query input (VS Code behavior).
+  const [searchFocusToken, setSearchFocusToken] = useState(0)
+  const openSearchView = useCallback(() => {
+    setSettingsOpen(false)
+    setSidebarCollapsed(false)
+    setSidebarView('search')
+    setSearchFocusToken((n) => n + 1)
+  }, [])
+
   const selectTheme = useCallback((id: string) => {
     const t = themeById(id)
     setThemeId(t.id)
@@ -948,14 +957,15 @@ export function App() {
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
     const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
+    const offSearch = window.editorApi.onMenu('menu:search', () => openSearchView())
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
     const offClearRecent = window.editorApi.onMenu('menu:clear-recent', () => {
       void window.editorApi.clearRecentFolders().then(setRecentFolders)
       setRecentFiles([])
     })
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offPreview(); offOpenRecent(); offClearRecent() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openPreviewToSide])
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -1101,7 +1111,7 @@ export function App() {
         </div>
         <div class={`sidebar-view${sidebarView === 'search' ? '' : ' hidden'}`}>
           {root ? (
-            <SearchPanel onOpenMatch={openMatch} />
+            <SearchPanel onOpenMatch={openMatch} focusToken={searchFocusToken} />
           ) : (
             <>
               <div class="sidebar-header">Search</div>

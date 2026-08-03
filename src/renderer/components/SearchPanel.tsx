@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'preact/hooks'
+import { useState, useRef, useCallback, useEffect } from 'preact/hooks'
 import {
   ChevronRight, ChevronDown, CaseSensitive, WholeWord, Regex,
   ReplaceAll, RefreshCw, ListX, FoldVertical,
@@ -7,9 +7,12 @@ import type { SearchFileResult, SearchOptions, SearchMatch } from '../../../elec
 
 interface SearchPanelProps {
   onOpenMatch: (filePath: string, fileName: string, line: number) => void
+  // Bump to move focus into the query input (Cmd+Shift+F re-focuses even when the
+  // panel is already open — the panel stays mounted across view switches).
+  focusToken?: number
 }
 
-export function SearchPanel({ onOpenMatch }: SearchPanelProps) {
+export function SearchPanel({ onOpenMatch, focusToken }: SearchPanelProps) {
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
@@ -21,6 +24,16 @@ export function SearchPanel({ onOpenMatch }: SearchPanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [notice, setNotice] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const queryInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus + select the query input whenever the owner bumps focusToken (Cmd+Shift+F).
+  // Token 0 is the initial render — the panel may be mounted hidden behind another
+  // view, and grabbing focus then would yank it out of the editor.
+  useEffect(() => {
+    if (!focusToken) return
+    queryInputRef.current?.focus()
+    queryInputRef.current?.select()
+  }, [focusToken])
 
   const runSearch = useCallback(async (q: string, o: SearchOptions) => {
     if (!q) { setResults([]); setTotal(0); setTruncated(false); return }
@@ -99,6 +112,7 @@ export function SearchPanel({ onOpenMatch }: SearchPanelProps) {
               class="search-input"
               placeholder="Search"
               value={query}
+              ref={queryInputRef}
               onInput={(e) => onQueryInput((e.target as HTMLInputElement).value)}
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
