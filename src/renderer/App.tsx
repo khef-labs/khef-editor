@@ -9,7 +9,7 @@ import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
 import { ContextMenu, type MenuEntry } from './components/ContextMenu'
-import { selectAllInActiveEditor, setSelectionStatusListener } from './components/CodeEditor'
+import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { isPreviewable } from './lib/preview'
 import {
@@ -140,12 +140,15 @@ export function App() {
     setSidebarCollapsed((v) => !v)
   }, [])
 
-  // Cmd+Shift+F: open the Search view and focus its query input (VS Code behavior).
+  // Cmd+Shift+F: open the Search view, seed the query from the editor's selection (or
+  // word under the cursor), and focus the input (VS Code behavior).
   const [searchFocusToken, setSearchFocusToken] = useState(0)
+  const [searchSeed, setSearchSeed] = useState('')
   const openSearchView = useCallback(() => {
     setSettingsOpen(false)
     setSidebarCollapsed(false)
     setSidebarView('search')
+    setSearchSeed(searchSeedFromActiveEditor())
     setSearchFocusToken((n) => n + 1)
   }, [])
 
@@ -1111,7 +1114,7 @@ export function App() {
         </div>
         <div class={`sidebar-view${sidebarView === 'search' ? '' : ' hidden'}`}>
           {root ? (
-            <SearchPanel onOpenMatch={openMatch} focusToken={searchFocusToken} />
+            <SearchPanel onOpenMatch={openMatch} focusToken={searchFocusToken} seedQuery={searchSeed} />
           ) : (
             <>
               <div class="sidebar-header">Search</div>

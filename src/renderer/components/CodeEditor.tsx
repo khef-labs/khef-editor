@@ -132,6 +132,21 @@ export function selectAllInActiveEditor(): boolean {
   return true
 }
 
+// Text to seed a search with, from the most-recently-focused editor: the primary
+// selection if it's a single line, else the word under the cursor, else ''. Used by
+// Cmd+Shift+F (search in files) so it opens pre-filled like VS Code.
+export function searchSeedFromActiveEditor(): string {
+  const view = activeEditorView
+  if (!view) return ''
+  const sel = view.state.selection.main
+  if (!sel.empty) {
+    const text = view.state.sliceDoc(sel.from, sel.to)
+    return text.includes('\n') ? '' : text
+  }
+  const word = view.state.wordAt(sel.head)
+  return word ? view.state.sliceDoc(word.from, word.to) : ''
+}
+
 // Selection status for the app status bar ("3 selections" for Cmd+D multi-cursor,
 // "12 selected" for a single range). Module-level listener, same pattern as
 // activeEditorView — avoids threading a callback through PaneTree/EditorGroupView.
@@ -301,8 +316,13 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     setMatchState(state)
   }, [findQuery, findCase, findWord, findRegex])
 
+  // Bumped every time Find is (re)opened so the widget re-focuses + re-selects its input
+  // even when it was already open (Cmd+F on a new selection while the widget is showing).
+  const [findFocusToken, setFindFocusToken] = useState(0)
+
   // Open the find widget. `withReplace` expands the replace row. Seeds the query from a
-  // single-line selection; auto-enables find-in-selection (frozen range) for a multi-line one.
+  // single-line selection (or the word under the cursor when nothing is selected, VS Code
+  // behavior); auto-enables find-in-selection (frozen range) for a multi-line one.
   const openFind = useCallback((withReplace: boolean) => {
     const view = viewRef.current
     if (!view) return
@@ -319,10 +339,12 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     } else {
       scopeRef.current = null
       setFindInSelection(false)
-      if (selText.length > 0) setFindQuery(selText) // single-line → prefill the query
+      const seed = selText.length > 0 ? selText : (view.state.wordAt(sel.head) ? view.state.sliceDoc(view.state.wordAt(sel.head)!.from, view.state.wordAt(sel.head)!.to) : '')
+      if (seed.length > 0) setFindQuery(seed)
     }
     if (withReplace) setReplaceExpanded(true)
     setFindOpen(true)
+    setFindFocusToken((n) => n + 1)
   }, [])
   const openFindRef = useRef(openFind)
   openFindRef.current = openFind
@@ -736,6 +758,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     <div class="cm-host-wrap">
       {findOpen && (
         <FindWidget
+          focusToken={findFocusToken}
           query={findQuery}
           replace={findReplace}
           caseSensitive={findCase}

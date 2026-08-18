@@ -10,9 +10,12 @@ interface SearchPanelProps {
   // Bump to move focus into the query input (Cmd+Shift+F re-focuses even when the
   // panel is already open — the panel stays mounted across view switches).
   focusToken?: number
+  // Text to pre-fill the query with when focusToken bumps (editor selection / word at
+  // cursor). Empty string leaves the existing query alone.
+  seedQuery?: string
 }
 
-export function SearchPanel({ onOpenMatch, focusToken }: SearchPanelProps) {
+export function SearchPanel({ onOpenMatch, focusToken, seedQuery }: SearchPanelProps) {
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
@@ -25,15 +28,6 @@ export function SearchPanel({ onOpenMatch, focusToken }: SearchPanelProps) {
   const [notice, setNotice] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const queryInputRef = useRef<HTMLInputElement>(null)
-
-  // Focus + select the query input whenever the owner bumps focusToken (Cmd+Shift+F).
-  // Token 0 is the initial render — the panel may be mounted hidden behind another
-  // view, and grabbing focus then would yank it out of the editor.
-  useEffect(() => {
-    if (!focusToken) return
-    queryInputRef.current?.focus()
-    queryInputRef.current?.select()
-  }, [focusToken])
 
   const runSearch = useCallback(async (q: string, o: SearchOptions) => {
     if (!q) { setResults([]); setTotal(0); setTruncated(false); return }
@@ -57,6 +51,25 @@ export function SearchPanel({ onOpenMatch, focusToken }: SearchPanelProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => void runSearch(q, opts), 200)
   }
+
+  // Cmd+Shift+F: seed the query from the editor (if there is a seed), run the search,
+  // and focus + select the input. Token 0 is the initial render — the panel may be
+  // mounted hidden behind another view, and grabbing focus then would yank it out of
+  // the editor.
+  const optsRef = useRef(opts)
+  optsRef.current = opts
+  useEffect(() => {
+    if (!focusToken) return
+    if (seedQuery) {
+      setQuery(seedQuery)
+      setNotice(null)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      void runSearch(seedQuery, optsRef.current)
+    }
+    queryInputRef.current?.focus()
+    queryInputRef.current?.select()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusToken])
 
   const toggleOpt = (key: keyof SearchOptions) => {
     const next = { ...opts, [key]: !opts[key] }

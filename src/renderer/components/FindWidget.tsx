@@ -8,6 +8,8 @@ import { MAX_MATCHES } from '../lib/findMatches'
 // Presentational VS Code-style find/replace widget. All state + behavior live in
 // CodeEditor (which owns the EditorView); this component is dumb and just renders.
 export interface FindWidgetProps {
+  // Bumped by the owner each time Find is (re)opened → focus + select the find input.
+  focusToken?: number
   query: string
   replace: string
   caseSensitive: boolean
@@ -45,7 +47,7 @@ function countLabel(query: string, current: number, total: number, invalid: bool
 
 export function FindWidget(props: FindWidgetProps) {
   const {
-    query, replace, caseSensitive, wholeWord, regexp, inSelection, replaceExpanded,
+    focusToken, query, replace, caseSensitive, wholeWord, regexp, inSelection, replaceExpanded,
     current, total, invalid,
     onQuery, onReplace, onToggleCase, onToggleWord, onToggleRegex, onToggleInSelection,
     onToggleReplaceExpanded, onNext, onPrev, onReplaceOne, onReplaceAll, onClose,
@@ -54,11 +56,12 @@ export function FindWidget(props: FindWidgetProps) {
 
   const findInputRef = useRef<HTMLInputElement>(null)
 
-  // Focus + select the find input when the widget mounts.
+  // Focus + select the find input when the widget mounts AND whenever the owner re-opens
+  // Find (Cmd+F again with a new selection while the widget is already showing).
   useEffect(() => {
     const el = findInputRef.current
     if (el) { el.focus(); el.select() }
-  }, [])
+  }, [focusToken])
 
   const noMatches = total === 0 || invalid || query.length === 0
   const label = countLabel(query, current, total, invalid)
