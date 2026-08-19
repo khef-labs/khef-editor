@@ -1057,6 +1057,9 @@ html, body, #app {
 .scm-commit-row:hover { background: var(--row-hover); }
 .scm-commit-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--bg-statusbar); }
 .scm-commit-subject { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+/* Commit files nest under the subject: row padding (12) + dot (8) + gap (8) = 28px
+   is where the subject text starts; step in one more level from there. */
+.scm-commit-file { padding-left: 40px; }
 
 /* Side-by-side diff view */
 .diff-view { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
