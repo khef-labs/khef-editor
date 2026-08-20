@@ -44,6 +44,9 @@ export function App() {
   const [treeMenu, setTreeMenu] = useState<{ entry: FsTreeEntry; x: number; y: number } | null>(null)
   // Row being renamed inline in the Explorer.
   const [renameTarget, setRenameTarget] = useState<{ path: string; type: 'file' | 'directory' } | null>(null)
+  // "Reveal in Explorer" target: the row scrolls itself into view when it mounts or the
+  // token bumps (ancestor dirs may still be lazy-loading when the reveal starts).
+  const [revealTarget, setRevealTarget] = useState<{ path: string; token: number } | null>(null)
   const [pendingJump, setPendingJump] = useState<{ path: string; line: number; token: number } | null>(null)
   const jumpTokenRef = useRef(0)
   const [themeId, setThemeId] = useState<string>('dark-plus')
@@ -183,6 +186,30 @@ export function App() {
 
   const selectTreeEntry = useCallback((entry: FsTreeEntry) => {
     setTreeSelected({ path: entry.path, type: entry.type === 'directory' ? 'directory' : 'file' })
+  }, [])
+
+  // "Reveal in Explorer": open the Explorer view, expand every ancestor folder of the
+  // file, select its row, and scroll it into view (rows lazy-load, so the scroll is
+  // driven by the row itself via revealTarget).
+  const revealTokenRef = useRef(0)
+  const revealInExplorer = useCallback((absPath: string) => {
+    const rootPath = rootRef.current
+    if (!rootPath || !absPath.startsWith(rootPath + '/')) return
+    const parts = absPath.slice(rootPath.length + 1).split('/')
+    const dirs: string[] = []
+    let cur = rootPath
+    for (let i = 0; i < parts.length - 1; i++) { cur = `${cur}/${parts[i]}`; dirs.push(cur) }
+    setExpandedDirs((prev) => {
+      if (dirs.every((d) => prev.has(d))) return prev
+      const next = new Set(prev)
+      for (const d of dirs) next.add(d)
+      return next
+    })
+    setTreeSelected({ path: absPath, type: 'file' })
+    setSettingsOpen(false)
+    setSidebarCollapsed(false)
+    setSidebarView('explorer')
+    setRevealTarget({ path: absPath, token: ++revealTokenRef.current })
   }, [])
 
   // Start inline creation. Target dir: the selected folder, or the selected file's
@@ -1095,6 +1122,7 @@ export function App() {
                 expandedDirs={expandedDirs}
                 newEntry={newEntry}
                 renameTarget={renameTarget?.path ?? null}
+                revealTarget={revealTarget}
                 onToggleDir={toggleDir}
                 onSelect={selectTreeEntry}
                 onOpenFile={openFile}
@@ -1124,7 +1152,17 @@ export function App() {
         </div>
         <div class={`sidebar-view${sidebarView === 'scm' ? '' : ' hidden'}`}>
           {root ? (
-            <SourceControlPanel refreshToken={scmRefresh} onOpenDiff={openDiff} />
+            <SourceControlPanel
+              refreshToken={scmRefresh}
+              rootPath={root}
+              onOpenDiff={openDiff}
+              onOpenFile={(rel) => {
+                if (!root) return
+                const abs = `${root}/${rel}`
+                openFilePermanent({ name: rel.split('/').pop() ?? rel, path: abs, type: 'file' })
+              }}
+              onRevealInExplorer={(rel) => { if (root) revealInExplorer(`${root}/${rel}`) }}
+            />
           ) : (
             <>
               <div class="sidebar-header">Source Control</div>
@@ -1198,9 +1236,15 @@ export function App() {
         const menuTab = menuLeaf?.tabs.find((t) => t.path === tabMenu.path)
         if (!menuLeaf || !menuTab) return null
         const idx = menuLeaf.tabs.findIndex((t) => t.path === menuTab.path)
-        // Untitled/preview/diff tabs have synthetic paths — no disk path to copy or reveal.
+        // Untitled/preview/diff tabs have synthetic paths — but preview and diff tabs
+        // still refer to a real disk file (sourcePath / the diffed file), so path
+        // actions target THAT file; only untitled tabs have nothing on disk.
         const synthetic = !!menuTab.untitled || menuTab.kind === 'preview' || menuTab.kind === 'diff'
-        const relPath = root && menuTab.path.startsWith(root + '/') ? menuTab.path.slice(root.length + 1) : null
+        const filePath = menuTab.untitled ? null
+          : menuTab.kind === 'preview' ? (menuTab.sourcePath ?? null)
+          : menuTab.kind === 'diff' ? (root && menuTab.diff ? `${root}/${menuTab.diff.file}` : null)
+          : menuTab.path
+        const relPath = root && filePath && filePath.startsWith(root + '/') ? filePath.slice(root.length + 1) : null
         const entries: MenuEntry[] = [
           { kind: 'item', label: 'Close', hint: '⌘W', onClick: () => closeTab(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Close Others', disabled: menuLeaf.tabs.length < 2, onClick: () => closeOthers(menuLeaf.id, menuTab.path) },
@@ -1208,11 +1252,19 @@ export function App() {
           { kind: 'item', label: 'Close Saved', onClick: () => closeSaved(menuLeaf.id) },
           { kind: 'item', label: 'Close All', onClick: () => closeAll(menuLeaf.id) },
           { kind: 'separator' },
-          { kind: 'item', label: 'Copy Path', disabled: synthetic, onClick: () => void navigator.clipboard.writeText(menuTab.path) },
-          { kind: 'item', label: 'Copy Relative Path', disabled: synthetic || !relPath, onClick: () => { if (relPath) void navigator.clipboard.writeText(relPath) } },
+          // Preview/diff tabs: open the underlying file as a real editor tab (SCM parity).
+          { kind: 'item', label: 'Open File', disabled: !synthetic || !filePath, onClick: () => {
+              if (filePath) openFilePermanent({ name: filePath.split('/').pop() ?? filePath, path: filePath, type: 'file' })
+            } },
           { kind: 'separator' },
-          { kind: 'item', label: 'Reveal in Finder', disabled: synthetic, onClick: () => {
-              window.editorApi.revealInFinder(menuTab.path).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+          { kind: 'item', label: 'Copy Path', disabled: !filePath, onClick: () => { if (filePath) void navigator.clipboard.writeText(filePath) } },
+          { kind: 'item', label: 'Copy Relative Path', disabled: !relPath, onClick: () => { if (relPath) void navigator.clipboard.writeText(relPath) } },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Reveal in Finder', disabled: !filePath, onClick: () => {
+              if (filePath) window.editorApi.revealInFinder(filePath).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+            } },
+          { kind: 'item', label: 'Reveal in Explorer', disabled: !filePath || !root || !filePath.startsWith(root + '/'), onClick: () => {
+              if (filePath) revealInExplorer(filePath)
             } },
           { kind: 'separator' },
           { kind: 'item', label: 'Keep Open', disabled: !menuTab.ephemeral, onClick: () => promoteTab(menuLeaf.id, menuTab.path) },

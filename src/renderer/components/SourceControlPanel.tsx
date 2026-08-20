@@ -2,11 +2,18 @@ import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
 import { ChevronRight, ChevronDown, RefreshCw, GitBranch } from 'lucide-preact'
 import type { GitChange, GitCommit } from '../../../electron/types'
 import type { DiffSpec } from './DiffView'
+import { ContextMenu, type MenuEntry } from './ContextMenu'
 
 interface SourceControlPanelProps {
   // Re-fetch trigger: bump to refresh (e.g. when the panel becomes visible or a file saves).
   refreshToken: number
+  // Workspace root, for turning git's repo-relative paths into absolute ones.
+  rootPath: string | null
   onOpenDiff: (spec: DiffSpec, title: string) => void
+  // Open the file itself (current working-tree version) as an editor tab.
+  onOpenFile: (relPath: string) => void
+  // Select + scroll the file into view in the Explorer sidebar.
+  onRevealInExplorer: (relPath: string) => void
 }
 
 const PAGE = 50
@@ -15,7 +22,7 @@ const badgeTitle: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Dele
 function basename(p: string): string { return p.split('/').pop() ?? p }
 function dirname(p: string): string { const b = basename(p); return p.slice(0, p.length - b.length - 1) }
 
-export function SourceControlPanel({ refreshToken, onOpenDiff }: SourceControlPanelProps) {
+export function SourceControlPanel({ refreshToken, rootPath, onOpenDiff, onOpenFile, onRevealInExplorer }: SourceControlPanelProps) {
   const [isRepo, setIsRepo] = useState<boolean | null>(null)
   const [branch, setBranch] = useState<string | null>(null)
   const [changes, setChanges] = useState<GitChange[]>([])
@@ -26,7 +33,15 @@ export function SourceControlPanel({ refreshToken, onOpenDiff }: SourceControlPa
   const [graphOpen, setGraphOpen] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [commitFiles, setCommitFiles] = useState<Record<string, GitChange[]>>({})
+  // Right-click menu on a file row (Changes or a commit's files). `deleted` disables
+  // Open File — a 'D' row has no working-tree file to open.
+  const [fileMenu, setFileMenu] = useState<{ path: string; deleted: boolean; x: number; y: number } | null>(null)
   const graphRef = useRef<HTMLDivElement>(null)
+
+  const openFileMenu = (e: MouseEvent, path: string, status: string) => {
+    e.preventDefault()
+    setFileMenu({ path, deleted: status === 'D', x: e.clientX, y: e.clientY })
+  }
 
   const load = useCallback(async () => {
     try {
@@ -114,6 +129,7 @@ export function SourceControlPanel({ refreshToken, onOpenDiff }: SourceControlPa
               class="scm-file-row"
               title={c.path}
               onClick={() => onOpenDiff({ mode: 'working', file: c.path }, `${basename(c.path)} (Working Tree)`)}
+              onContextMenu={(e) => openFileMenu(e, c.path, c.status)}
             >
               <span class="scm-file-name">{basename(c.path)}</span>
               <span class="scm-file-dir">{dirname(c.path)}</span>
@@ -145,6 +161,7 @@ export function SourceControlPanel({ refreshToken, onOpenDiff }: SourceControlPa
                     class="scm-commit-file"
                     title={f.path}
                     onClick={() => onOpenDiff({ mode: 'commit', file: f.path, hash: commit.hash }, `${basename(f.path)} (${commit.short})`)}
+                    onContextMenu={(e) => openFileMenu(e, f.path, f.status)}
                   >
                     <span class="scm-file-name">{basename(f.path)}</span>
                     <span class="scm-file-dir">{dirname(f.path)}</span>
@@ -157,6 +174,18 @@ export function SourceControlPanel({ refreshToken, onOpenDiff }: SourceControlPa
           {loadingMore && <div class="scm-empty-row">Loading…</div>}
         </div>
       )}
+
+      {fileMenu && (() => {
+        const abs = rootPath ? `${rootPath}/${fileMenu.path}` : fileMenu.path
+        const entries: MenuEntry[] = [
+          { kind: 'item', label: 'Open File', disabled: fileMenu.deleted, onClick: () => onOpenFile(fileMenu.path) },
+          { kind: 'item', label: 'Reveal in Explorer', disabled: fileMenu.deleted, onClick: () => onRevealInExplorer(fileMenu.path) },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Copy Path', onClick: () => void navigator.clipboard.writeText(abs) },
+          { kind: 'item', label: 'Copy Relative Path', onClick: () => void navigator.clipboard.writeText(fileMenu.path) },
+        ]
+        return <ContextMenu x={fileMenu.x} y={fileMenu.y} entries={entries} onClose={() => setFileMenu(null)} />
+      })()}
     </div>
   )
 }

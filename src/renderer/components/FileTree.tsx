@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'preact/hooks'
+import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, FilePlus, FolderPlus } from 'lucide-preact'
 import type { FsTreeEntry } from '../../../electron/types'
 
@@ -22,6 +22,9 @@ interface FileTreeProps {
   newEntry: NewEntrySpec | null
   // Path currently being renamed inline (its label becomes an input), or null.
   renameTarget: string | null
+  // "Reveal in Explorer": the row with this path scrolls itself into view when it
+  // mounts or when the token bumps (its ancestors may still be lazy-loading).
+  revealTarget: { path: string; token: number } | null
   onToggleDir: (path: string) => void
   onSelect: (entry: FsTreeEntry) => void
   onOpenFile: (entry: FsTreeEntry) => void
@@ -71,9 +74,18 @@ export function NewEntryRow({ kind, indent, onSubmit, onCancel }: {
 type TreeNodeProps = Omit<FileTreeProps, 'entries'> & { entry: FsTreeEntry; depth: number }
 
 function TreeNode(props: TreeNodeProps) {
-  const { entry, depth, activePath, selectedPath, refreshToken, expandedDirs, newEntry, renameTarget, onToggleDir, onSelect, onOpenFile, onOpenFilePermanent, onRowContextMenu, onSubmitNewEntry, onCancelNewEntry, onSubmitRename, onCancelRename } = props
+  const { entry, depth, activePath, selectedPath, refreshToken, expandedDirs, newEntry, renameTarget, revealTarget, onToggleDir, onSelect, onOpenFile, onOpenFilePermanent, onRowContextMenu, onSubmitNewEntry, onCancelNewEntry, onSubmitRename, onCancelRename } = props
   const [children, setChildren] = useState<FsTreeEntry[] | null>(entry.children ?? null)
   const [loading, setLoading] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // Reveal-in-Explorer: scroll this row into view when it's the target — either the
+  // token just bumped (row already mounted) or this row just mounted after its
+  // lazy-loading ancestors expanded.
+  const isRevealTarget = revealTarget?.path === entry.path
+  useEffect(() => {
+    if (isRevealTarget) rowRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [isRevealTarget, revealTarget?.token])
 
   const isDir = entry.type === 'directory'
   const isActive = entry.path === activePath
@@ -123,6 +135,7 @@ function TreeNode(props: TreeNodeProps) {
   return (
     <div>
       <div
+        ref={rowRef}
         class={`tree-row${isActive ? ' active' : ''}${isSelected ? ' selected' : ''}`}
         style={{ paddingLeft: `${indent}px` }}
         onClick={() => void toggle()}
