@@ -47,8 +47,6 @@ if [[ "${1:-}" == "--install" ]]; then
   exit 0
 fi
 
-arg="${1:-}"
-
 encode() { python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"; }
 
 open_target() {
@@ -80,28 +78,38 @@ open_target() {
   fi
 }
 
-if [[ -z "$arg" ]]; then
+# Open one target: a directory (its own window per repo), a file, or file:line.
+open_one() {
+  local arg="$1" line=""
+  if [[ "$arg" =~ ^(.+):([0-9]+)$ ]]; then
+    arg="${BASH_REMATCH[1]}"
+    line="${BASH_REMATCH[2]}"
+  fi
+
+  local resolved
+  resolved="$(cd "$(dirname "$arg")" 2>/dev/null && pwd)/$(basename "$arg")"
+  if [[ ! -e "$resolved" ]]; then
+    echo "ke: $arg: No such file or directory" >&2
+    return 1
+  fi
+
+  if [[ -d "$resolved" ]]; then
+    open_target "$resolved" "" "1"
+  elif [[ -f "$resolved" ]]; then
+    open_target "$resolved" "$line"
+  else
+    echo "ke: $arg: Not a file or directory" >&2
+    return 1
+  fi
+}
+
+if [[ $# -eq 0 ]]; then
   open_target "$(pwd)" "" "1"
   exit 0
 fi
 
-line=""
-if [[ "$arg" =~ ^(.+):([0-9]+)$ ]]; then
-  arg="${BASH_REMATCH[1]}"
-  line="${BASH_REMATCH[2]}"
-fi
-
-resolved="$(cd "$(dirname "$arg")" 2>/dev/null && pwd)/$(basename "$arg")"
-if [[ ! -e "$resolved" ]]; then
-  echo "ke: $arg: No such file or directory" >&2
-  exit 1
-fi
-
-if [[ -d "$resolved" ]]; then
-  open_target "$resolved" "" "1"
-elif [[ -f "$resolved" ]]; then
-  open_target "$resolved" "$line"
-else
-  echo "ke: $arg: Not a file or directory" >&2
-  exit 1
-fi
+rc=0
+for target_arg in "$@"; do
+  open_one "$target_arg" || rc=1
+done
+exit $rc
