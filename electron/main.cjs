@@ -240,20 +240,35 @@ function sendLaunchRequest(win, fresh, request) {
   win.focus()
 }
 
-// Resolve a launch target, then push either a workspace-open or loose-file-open request to
-// the focused/visible window (revealing a hidden one), creating one if none exist.
+// Window for opening a WORKSPACE. One repo per window: reuse the window that already has
+// this root (focus it), else an empty welcome-screen window, else create a new one. This
+// applies regardless of how the open arrived (protocol URL, `open -a`, Finder,
+// second-instance args), so opening a different repo never silently replaces an existing
+// window's workspace.
+function workspaceWindow(realRoot) {
+  const wins = BrowserWindow.getAllWindows()
+  const same = wins.find((w) => ws.getWorkspaceRoot(w.webContents.id) === realRoot)
+  if (same) { same.show(); same.focus(); return { win: same, fresh: false } }
+  const empty = wins.find((w) => !ws.getWorkspaceRoot(w.webContents.id))
+  if (empty) { empty.show(); empty.focus(); return { win: empty, fresh: false } }
+  return { win: createWindow(), fresh: true }
+}
+
+// Resolve a launch target, then push either a workspace-open or loose-file-open request.
+// Directories route through workspaceWindow (same-root reuse / new window per repo);
+// files go to the focused/visible window (or a new one with --new-window).
 async function openLaunchRequest(request) {
-  const { win, fresh } = targetWindow({ forceNew: request.newWindow })
-  const wcId = win.webContents.id
   try {
     const real = await fsp.realpath(request.path)
     const st = await fsp.stat(real)
     if (st.isDirectory()) {
+      const { win, fresh } = workspaceWindow(real)
       sendLaunchRequest(win, fresh, { kind: 'workspace', path: real })
       return
     }
     if (!st.isFile()) return
-    const file = await readLooseFileForWindow(wcId, real)
+    const { win, fresh } = targetWindow({ forceNew: request.newWindow })
+    const file = await readLooseFileForWindow(win.webContents.id, real)
     sendLaunchRequest(win, fresh, { kind: 'file', file, line: request.line })
   } catch {
     // Missing, too large, unreadable, or unsupported — silently ignore (matches open dialog).
