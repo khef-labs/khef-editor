@@ -11,6 +11,7 @@ import { SourceControlPanel } from './components/SourceControlPanel'
 import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
+import { windowTitle } from './lib/windowTitle'
 import { isPreviewable } from './lib/preview'
 import {
   makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes,
@@ -174,6 +175,10 @@ export function App() {
       setSidebarCollapsed(false)
     }
   }, [])
+
+  useEffect(() => {
+    document.title = windowTitle(rootName)
+  }, [rootName])
 
   const toggleDir = useCallback((path: string) => {
     setExpandedDirs((prev) => {
