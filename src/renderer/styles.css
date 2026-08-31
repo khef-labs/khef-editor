@@ -485,6 +485,10 @@ html, body, #app {
   color: inherit;
 }
 .tab-close:hover { background: rgba(255, 255, 255, 0.1); }
+/* Drag-reorder insertion indicator: a 2px accent line at the drop gap. Inset shadows so
+   the tab's box size (and the strip's layout) never shifts while dragging. */
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
 
 /* Editor body */
 .editor-body { flex: 1; min-height: 0; position: relative; }

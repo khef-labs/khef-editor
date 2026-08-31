@@ -12,6 +12,7 @@ import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
+import { moveTab } from './lib/tabOrder'
 import { isPreviewable } from './lib/preview'
 import {
   makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes,
@@ -575,6 +576,14 @@ export function App() {
       ...l,
       tabs: l.tabs.map((t) => (t.path === path && (t.kind === undefined || t.kind === 'editor') ? { ...t, ephemeral: undefined } : t)),
     })))
+  }, [])
+
+  // Drag-reorder a tab within its bar.
+  const reorderTab = useCallback((leafId: string, path: string, toGap: number) => {
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      const tabs = moveTab(l.tabs, path, toGap)
+      return tabs === l.tabs ? l : { ...l, tabs }
+    }))
   }, [])
 
   // Cmd+N — a new empty Untitled-N buffer in the focused leaf. Editable immediately; first
@@ -1206,6 +1215,7 @@ export function App() {
               onTabContextMenu={(leafId, path, e) => setTabMenu({ leafId, path, x: e.clientX, y: e.clientY })}
               onPreviewTab={openPreviewForTab}
               onSplitRightTab={splitRightWithTab}
+              onReorderTab={reorderTab}
               onSave={(leafId, path, content) => void saveTab(leafId, path, content)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
