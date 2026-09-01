@@ -686,6 +686,25 @@ html, body, #app {
 .find-btn.active { background: var(--accent-subtle, rgba(0, 122, 204, 0.4)); color: var(--fg-bright); }
 .find-btn:disabled { opacity: 0.35; cursor: default; }
 
+/* Custom tooltip (lib/tooltip.ts, opted into via data-tooltip). Replaces native title
+   tooltips, which render slowly and unreliably in Electron. */
+.app-tooltip {
+  position: fixed;
+  z-index: 200; /* above context menus */
+  display: none;
+  max-width: min(640px, 85vw);
+  padding: 4px 8px;
+  background: var(--bg-sidebar);
+  color: var(--fg);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 /* Context menu (right-click), VS Code-style */
 .context-menu {
   position: fixed;

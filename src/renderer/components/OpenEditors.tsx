@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks'
 import { ChevronRight, ChevronDown, X } from 'lucide-preact'
+import { tabHoverPath } from '../lib/editorGroups'
 import type { LeafNode } from '../lib/layout'
 
 interface OpenEditorsProps {
@@ -37,7 +38,8 @@ export function OpenEditors({ leaves, activeLeafId, onActivate, onClose }: OpenE
                 key={tab.path}
                 class={`open-editor-row${isActive ? ' active' : ''}`}
                 onClick={() => onActivate(leaf.id, tab.path)}
-                title={tab.path}
+                data-tooltip={tabHoverPath(tab)}
+                data-tooltip-placement="right"
               >
                 <button
                   class={`open-editor-close${dirty ? ' dirty' : ''}`}

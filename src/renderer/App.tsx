@@ -14,6 +14,7 @@ import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
 import { moveTab } from './lib/tabOrder'
 import type { TabDragSource } from './lib/tabDrag'
+import { installTooltips } from './lib/tooltip'
 import { isPreviewable } from './lib/preview'
 import {
   makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes, moveTabAcrossLeaves,
@@ -181,6 +182,9 @@ export function App() {
   useEffect(() => {
     document.title = windowTitle(rootName)
   }, [rootName])
+
+  // One custom-tooltip layer per window (elements opt in via data-tooltip).
+  useEffect(() => installTooltips(), [])
 
   const toggleDir = useCallback((path: string) => {
     setExpandedDirs((prev) => {

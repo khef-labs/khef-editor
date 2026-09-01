@@ -24,6 +24,16 @@ export interface EditorGroup {
   activePath: string | null
 }
 
+// Hover tooltip for a tab: the real file path, not the synthetic tab id. Preview tabs
+// point at their source file, diff tabs at the repo-relative file under diff, untitled
+// buffers have no path so the buffer name stands in.
+export function tabHoverPath(tab: Pick<OpenTab, 'path' | 'name' | 'sourcePath' | 'diff' | 'untitled'>): string {
+  if (tab.untitled) return tab.name
+  if (tab.sourcePath) return tab.sourcePath
+  if (tab.diff) return tab.diff.file
+  return tab.path
+}
+
 let groupSeq = 0
 export function nextGroupId(): string {
   return `g${++groupSeq}`
