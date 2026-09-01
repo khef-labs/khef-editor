@@ -3,6 +3,7 @@ import { CodeEditor } from './CodeEditor'
 import { PreviewPane } from './PreviewPane'
 import { DiffView } from './DiffView'
 import type { EditorGroup } from '../lib/editorGroups'
+import type { TabDragSource } from '../lib/tabDrag'
 import { themeById } from '../lib/themes'
 
 interface EditorGroupViewProps {
@@ -19,7 +20,7 @@ interface EditorGroupViewProps {
   onTabContextMenu: (path: string, e: MouseEvent) => void
   onPreviewTab: (path: string) => void
   onSplitRightTab: (path: string) => void
-  onReorderTab: (path: string, toGap: number) => void
+  onDropTab: (from: TabDragSource, toGap: number) => void
   onSave: (path: string, content?: string) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
@@ -32,7 +33,7 @@ interface EditorGroupViewProps {
 
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine,
-  onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onReorderTab, onSave,
+  onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave,
   onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
@@ -45,6 +46,7 @@ export function EditorGroupView({
       data-testid={`editor-group-${group.id}`}
     >
       <TabBar
+        groupId={group.id}
         tabs={group.tabs}
         activePath={group.activePath}
         onActivate={onActivateTab}
@@ -54,7 +56,7 @@ export function EditorGroupView({
         onPreview={() => { if (activeTab) onPreviewTab(activeTab.path) }}
         onSplitRight={() => { if (activeTab) onSplitRightTab(activeTab.path) }}
         onMore={(e) => { if (activeTab) onTabContextMenu(activeTab.path, e) }}
-        onReorder={onReorderTab}
+        onDropTab={onDropTab}
       />
       <div class="editor-body">
         {activeTab ? (

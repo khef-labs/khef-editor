@@ -2,6 +2,7 @@ import { Fragment } from 'preact'
 import { useRef } from 'preact/hooks'
 import { EditorGroupView } from './EditorGroupView'
 import type { LayoutNode, LeafNode, SplitNode, OpenTab } from '../lib/layout'
+import type { TabDragSource } from '../lib/tabDrag'
 
 interface PaneTreeProps {
   node: LayoutNode
@@ -17,7 +18,9 @@ interface PaneTreeProps {
   onTabContextMenu: (leafId: string, path: string, e: MouseEvent) => void
   onPreviewTab: (leafId: string, path: string) => void
   onSplitRightTab: (leafId: string, path: string) => void
-  onReorderTab: (leafId: string, path: string, toGap: number) => void
+  // A tab was dropped on `leafId`'s bar: `from` is the source pane/tab (possibly the
+  // same pane), `toGap` the insertion gap in the destination bar.
+  onDropTab: (leafId: string, from: TabDragSource, toGap: number) => void
   onSave: (leafId: string, path: string, content?: string) => void
   onResize: (splitId: string, sizes: number[]) => void
   onOpenFolder?: () => void
@@ -124,7 +127,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onReorderTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -142,7 +145,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       onTabContextMenu={(path, e) => onTabContextMenu(leaf.id, path, e)}
       onPreviewTab={(path) => onPreviewTab(leaf.id, path)}
       onSplitRightTab={(path) => onSplitRightTab(leaf.id, path)}
-      onReorderTab={(path, toGap) => onReorderTab(leaf.id, path, toGap)}
+      onDropTab={(from, toGap) => onDropTab(leaf.id, from, toGap)}
       onSave={(path, content) => onSave(leaf.id, path, content)}
       onOpenFolder={onOpenFolder}
       onOpenFile={onOpenFile}

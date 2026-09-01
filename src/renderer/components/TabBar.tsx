@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { X, Circle, Eye, SquareSplitHorizontal, Ellipsis } from 'lucide-preact'
 import { isPreviewable } from '../lib/preview'
+import { beginTabDrag, getTabDrag, endTabDrag, type TabDragSource } from '../lib/tabDrag'
 import type { OpenTab } from '../lib/editorGroups'
 
 export type { OpenTab }
 
 interface TabBarProps {
+  // Leaf id of the pane this bar belongs to — the drag source recorded at dragstart.
+  groupId: string
   tabs: OpenTab[]
   activePath: string | null
   onActivate: (path: string) => void
@@ -18,16 +21,14 @@ interface TabBarProps {
   onPreview: () => void
   onSplitRight: () => void
   onMore: (e: MouseEvent) => void
-  // Drag-reorder within this bar: move `path` to insertion gap `toGap` (0..tabs.length,
-  // counted in the pre-removal order — see lib/tabOrder.ts).
-  onReorder: (path: string, toGap: number) => void
+  // A tab was dropped on this bar at insertion gap `toGap` (0..tabs.length, counted in
+  // this bar's pre-removal order — see lib/tabOrder.ts). `from` names the source pane
+  // and tab; it may be this bar (reorder) or another pane (move across).
+  onDropTab: (from: TabDragSource, toGap: number) => void
 }
 
-export function TabBar({ tabs, activePath, onActivate, onClose, onPromote, onContextMenu, onPreview, onSplitRight, onMore, onReorder }: TabBarProps) {
+export function TabBar({ groupId, tabs, activePath, onActivate, onClose, onPromote, onContextMenu, onPreview, onSplitRight, onMore, onDropTab }: TabBarProps) {
   const stripRef = useRef<HTMLDivElement>(null)
-  // Path of the tab being dragged. A ref (not dataTransfer) so drags from other windows
-  // or apps can never trigger a reorder; null means no drag from this bar is active.
-  const dragPathRef = useRef<string | null>(null)
   // Insertion gap the drop would use, for the indicator line; null hides it.
   const [dropGap, setDropGap] = useState<number | null>(null)
 
@@ -39,7 +40,7 @@ export function TabBar({ tabs, activePath, onActivate, onClose, onPromote, onCon
     return e.clientX < r.left + r.width / 2 ? i : i + 1
   }
 
-  const endDrag = () => { dragPathRef.current = null; setDropGap(null) }
+  const endDrag = () => { endTabDrag(); setDropGap(null) }
 
   // Keep the active tab visible. The strip scrolls horizontally with no scrollbar, so a
   // tab activated by anything other than a click on it (ke <path>, Cmd+P, Explorer,
@@ -66,14 +67,17 @@ export function TabBar({ tabs, activePath, onActivate, onClose, onPromote, onCon
         ref={stripRef}
         onDragOver={(e) => {
           // Dragging past the last tab into the strip's empty space drops at the end.
-          if (!dragPathRef.current) return
+          if (!getTabDrag()) return
           e.preventDefault()
           if (e.target === stripRef.current) setDropGap(tabs.length)
         }}
         onDrop={(e) => {
-          if (!dragPathRef.current) return
+          const from = getTabDrag()
+          if (!from) return
           e.preventDefault()
-          if (dropGap !== null) onReorder(dragPathRef.current, dropGap)
+          if (dropGap !== null) onDropTab(from, dropGap)
+          // The source bar's dragend also runs endDrag; doing it here too keeps this
+          // bar's indicator from lingering if that event is swallowed.
           endDrag()
         }}
         onDragLeave={(e) => {
@@ -92,12 +96,15 @@ export function TabBar({ tabs, activePath, onActivate, onClose, onPromote, onCon
               class={`tab${active ? ' active' : ''}${t.ephemeral ? ' ephemeral' : ''}${dropClass}`}
               draggable
               onDragStart={(e) => {
-                dragPathRef.current = t.path
-                if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.path) }
+                beginTabDrag(groupId, t.path)
+                // Custom MIME type only — NO text/plain. A text payload would let
+                // CodeMirror insert the path as document text if the tab were dropped
+                // over an editor.
+                if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('application/x-khef-editor-tab', t.path) }
               }}
               onDragEnd={endDrag}
               onDragOver={(e) => {
-                if (!dragPathRef.current) return
+                if (!getTabDrag()) return
                 e.preventDefault()
                 e.stopPropagation()
                 setDropGap(gapAt(i, e))

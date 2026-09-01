@@ -13,9 +13,10 @@ import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActi
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
 import { moveTab } from './lib/tabOrder'
+import type { TabDragSource } from './lib/tabDrag'
 import { isPreviewable } from './lib/preview'
 import {
-  makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes,
+  makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes, moveTabAcrossLeaves,
   type LayoutNode, type OpenTab,
 } from './lib/layout'
 
@@ -578,12 +579,23 @@ export function App() {
     })))
   }, [])
 
-  // Drag-reorder a tab within its bar.
-  const reorderTab = useCallback((leafId: string, path: string, toGap: number) => {
-    setTree((prev) => updateLeaf(prev, leafId, (l) => {
-      const tabs = moveTab(l.tabs, path, toGap)
-      return tabs === l.tabs ? l : { ...l, tabs }
-    }))
+  // A tab was dropped on a tab bar: same pane → reorder in place; different pane → move
+  // it there (dup-merge, source-collapse — see moveTabAcrossLeaves) and focus the
+  // destination, like VS Code.
+  const dropTab = useCallback((leafId: string, from: TabDragSource, toGap: number) => {
+    if (from.leafId === leafId) {
+      setTree((prev) => updateLeaf(prev, leafId, (l) => {
+        const tabs = moveTab(l.tabs, from.path, toGap)
+        return tabs === l.tabs ? l : { ...l, tabs }
+      }))
+      return
+    }
+    setTree((prev) => {
+      const res = moveTabAcrossLeaves(prev, from.leafId, from.path, leafId, toGap)
+      if (!res) return prev
+      setActiveLeafId(res.focusId)
+      return res.tree
+    })
   }, [])
 
   // Cmd+N — a new empty Untitled-N buffer in the focused leaf. Editable immediately; first
@@ -1215,7 +1227,7 @@ export function App() {
               onTabContextMenu={(leafId, path, e) => setTabMenu({ leafId, path, x: e.clientX, y: e.clientY })}
               onPreviewTab={openPreviewForTab}
               onSplitRightTab={splitRightWithTab}
-              onReorderTab={reorderTab}
+              onDropTab={dropTab}
               onSave={(leafId, path, content) => void saveTab(leafId, path, content)}
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}

@@ -226,6 +226,52 @@ function removeFromSplit(split: SplitNode, leafId: string): { tree: LayoutNode; 
   return null
 }
 
+// Move a tab from one leaf to another (drag between tab bars). `toGap` is the insertion
+// gap index in the destination's tab list (0..tabs.length). If the destination already
+// holds a tab with the same path (splits duplicate tabs across panes), the copies merge:
+// the source copy is removed and the existing destination tab activates. A source pane
+// emptied by the move collapses, matching last-tab-close semantics. Returns the new tree
+// plus the leaf to focus, or null when the move is invalid (unknown leaf/tab, same leaf).
+export function moveTabAcrossLeaves(
+  tree: LayoutNode,
+  fromLeafId: string,
+  path: string,
+  toLeafId: string,
+  toGap: number,
+): { tree: LayoutNode; focusId: string } | null {
+  if (fromLeafId === toLeafId) return null
+  const src = findLeaf(tree, fromLeafId)
+  const dst = findLeaf(tree, toLeafId)
+  const tab = src?.tabs.find((t) => t.path === path)
+  if (!src || !dst || !tab) return null
+
+  let next = updateLeaf(tree, toLeafId, (l) => {
+    if (l.tabs.some((t) => t.path === path)) return { ...l, activePath: path }
+    const gap = Math.max(0, Math.min(toGap, l.tabs.length))
+    const tabs = [...l.tabs]
+    tabs.splice(gap, 0, { ...tab })
+    return { ...l, tabs, activePath: path }
+  })
+
+  next = updateLeaf(next, fromLeafId, (l) => {
+    const idx = l.tabs.findIndex((t) => t.path === path)
+    const tabs = l.tabs.filter((t) => t.path !== path)
+    let activePath = l.activePath
+    if (l.activePath === path) {
+      const fallback = tabs[idx] ?? tabs[idx - 1] ?? null
+      activePath = fallback ? fallback.path : null
+    }
+    return { ...l, tabs, activePath }
+  })
+
+  const srcAfter = findLeaf(next, fromLeafId)
+  if (srcAfter && srcAfter.tabs.length === 0) {
+    const res = removeLeaf(next, fromLeafId)
+    if (res) next = res.tree
+  }
+  return { tree: next, focusId: toLeafId }
+}
+
 // C-x 1: replace the whole tree with just the focused leaf.
 export function soloLeaf(tree: LayoutNode, leafId: string): LayoutNode {
   const leaf = findLeaf(tree, leafId)
