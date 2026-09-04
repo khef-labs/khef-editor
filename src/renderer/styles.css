@@ -1117,6 +1117,8 @@ html, body, #app {
 }
 .settings-input:focus { outline: 1px solid var(--bg-statusbar); }
 .settings-saved { color: #6cbe6c; font-size: 12px; }
+.settings-field { margin-bottom: 18px; }
+.settings-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .theme-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .theme-row {
   display: flex;

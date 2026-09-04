@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('editorApi', {
     stackTrace: () => ipcRenderer.invoke('debug:stackTrace'),
     scopes: (frameId) => ipcRenderer.invoke('debug:scopes', frameId),
     variables: (variablesReference) => ipcRenderer.invoke('debug:variables', variablesReference),
+    adapters: () => ipcRenderer.invoke('debug:adapters'),
     onEvent: (handler) => {
       const listener = (_event, payload) => handler(payload)
       ipcRenderer.on('debug:event', listener)

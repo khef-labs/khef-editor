@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { Check } from 'lucide-preact'
 import { THEMES } from '../lib/themes'
@@ -8,18 +9,24 @@ interface SettingsPanelProps {
   onClose: () => void
 }
 
-// Debugger interpreter override. Saved on blur/Enter; blank = automatic resolution
-// (workspace .venv/bin/python, else python3 from PATH).
-function PythonPathSetting() {
+// One debugger-binary path override (pythonPath / rdbgPath). Saved on blur/Enter; blank
+// = automatic resolution. Kept generic so new adapters add a row, not a component.
+function DebugBinarySetting({ settingKey, label, placeholder, help, testId }: {
+  settingKey: 'pythonPath' | 'rdbgPath'
+  label: string
+  placeholder: string
+  help: ComponentChildren
+  testId: string
+}) {
   const [value, setValue] = useState<string | null>(null) // null until settings load
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    void window.editorApi.getSettings().then((s) => setValue(s.pythonPath ?? ''))
-  }, [])
+    void window.editorApi.getSettings().then((s) => setValue(s[settingKey] ?? ''))
+  }, [settingKey])
 
   const save = (next: string) => {
-    void window.editorApi.setSettings({ pythonPath: next.trim() }).then(() => {
+    void window.editorApi.setSettings({ [settingKey]: next.trim() }).then(() => {
       setSaved(true)
       setTimeout(() => setSaved(false), 1500)
     })
@@ -27,26 +34,44 @@ function PythonPathSetting() {
 
   if (value === null) return null
   return (
-    <section class="settings-section">
-      <h3>Python Debugging</h3>
-      <p class="settings-desc">
-        Interpreter used to run and debug Python files. Leave blank for automatic:
-        the workspace's <code>.venv/bin/python</code> when present, else <code>python3</code>.
-        Debug sessions need <code>debugpy</code> installed in that interpreter.
-      </p>
+    <div class="settings-field">
+      <label class="settings-label">{label}</label>
+      <p class="settings-desc">{help}</p>
       <div class="settings-input-row">
         <input
           class="settings-input"
           type="text"
-          placeholder="auto (.venv/bin/python, else python3)"
+          placeholder={placeholder}
           value={value}
           onInput={(e) => setValue((e.target as HTMLInputElement).value)}
           onBlur={() => save(value)}
           onKeyDown={(e) => { if (e.key === 'Enter') save(value) }}
-          data-testid="python-path-input"
+          data-testid={testId}
         />
         {saved && <span class="settings-saved">Saved</span>}
       </div>
+    </div>
+  )
+}
+
+function DebuggingSettings() {
+  return (
+    <section class="settings-section">
+      <h3>Debugging</h3>
+      <DebugBinarySetting
+        settingKey="pythonPath"
+        label="Python interpreter"
+        placeholder="auto (.venv/bin/python, else python3)"
+        testId="python-path-input"
+        help={<>Runs and debugs <code>.py</code> files. Blank = automatic: the workspace's <code>.venv/bin/python</code> when present, else <code>python3</code>. Debug sessions need <code>debugpy</code> installed in it.</>}
+      />
+      <DebugBinarySetting
+        settingKey="rdbgPath"
+        label="Ruby debugger (rdbg)"
+        placeholder="auto (login-shell rdbg)"
+        testId="rdbg-path-input"
+        help={<>Runs and debugs <code>.rb</code> files. Blank = automatic: <code>rdbg</code> resolved via your login shell (so rvm/rbenv work). Needs the <code>debug</code> gem (<code>gem install debug</code>).</>}
+      />
     </section>
   )
 }
@@ -83,7 +108,7 @@ export function SettingsPanel({ activeTheme, onSelectTheme, onClose }: SettingsP
         </ul>
       </section>
 
-      <PythonPathSetting />
+      <DebuggingSettings />
     </div>
   )
 }

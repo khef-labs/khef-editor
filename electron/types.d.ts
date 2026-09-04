@@ -94,8 +94,10 @@ export interface AppSettings {
   sidebarWidth: number
   // Diff viewer layout: side-by-side ('split') or single-column GitHub-style ('unified').
   diffMode?: 'split' | 'unified'
-  // Debugger interpreter override; empty/absent = auto (.venv/bin/python, else python3).
+  // Python debugger interpreter override; empty/absent = auto (.venv/bin/python, else python3).
   pythonPath?: string
+  // Ruby debugger (rdbg) override; empty/absent = auto (login-shell lookup, else rdbg).
+  rdbgPath?: string
 }
 
 // --- Python debugging (DAP via debugpy; one session per window) ---
@@ -113,6 +115,12 @@ export type DebugEvent =
   | { kind: 'ended'; code: number | null }
 
 export type DebugCommand = 'continue' | 'stepOver' | 'stepIn' | 'stepOut'
+
+export interface DebugAdapterInfo {
+  id: string
+  label: string
+  extensions: string[]
+}
 
 export interface DebugStackFrame {
   id: number
@@ -136,13 +144,14 @@ export interface DebugVariable {
 }
 
 export interface DebugApi {
-  start(filePath: string, breakpoints: FileBreakpoints[], opts?: { noDebug?: boolean }): Promise<{ ok: boolean; python: string }>
+  start(filePath: string, breakpoints: FileBreakpoints[], opts?: { noDebug?: boolean }): Promise<{ ok: boolean; adapter: string; binary: string }>
   setBreakpoints(filePath: string, lines: number[]): Promise<{ active: boolean }>
   command(command: DebugCommand): Promise<{ ok: boolean }>
   stop(): Promise<{ ok: boolean }>
   stackTrace(): Promise<{ stackFrames: DebugStackFrame[] }>
   scopes(frameId: number): Promise<{ scopes: DebugScope[] }>
   variables(variablesReference: number): Promise<{ variables: DebugVariable[] }>
+  adapters(): Promise<DebugAdapterInfo[]>
   onEvent(handler: (event: DebugEvent) => void): () => void
 }
 

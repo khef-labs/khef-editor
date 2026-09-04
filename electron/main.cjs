@@ -512,7 +512,7 @@ function buildMenu(recentFolders = [], recentFiles = []) {
           click: () => sendToFocused('menu:debug-start'),
         },
         {
-          label: 'Run Python File',
+          label: 'Run File',
           accelerator: 'Ctrl+F5', // Ctrl even on macOS, like VS Code's Run Without Debugging
           click: () => sendToFocused('menu:run-file'),
         },

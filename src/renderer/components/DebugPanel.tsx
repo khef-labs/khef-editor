@@ -114,7 +114,7 @@ export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart }: Debug
         <div class="sidebar-header">Run and Debug</div>
         <div class="dbg-idle">
           <button class="dbg-start-btn" onClick={onStart}><Play size={14} /> Start Debugging</button>
-          <p class="hint">F5 runs the focused Python file under the debugger. Click in the gutter to set breakpoints.</p>
+          <p class="hint">F5 runs the focused file under the debugger (Python and Ruby supported). Click in the gutter to set breakpoints.</p>
         </div>
       </div>
     )

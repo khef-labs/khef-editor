@@ -732,12 +732,24 @@ export function App() {
     })
   }, [])
 
-  // The focused tab, when it's a debuggable Python file; otherwise reports why not.
-  const focusedPythonTab = useCallback((): OpenTab | null => {
+  // Debuggable file extensions (from the main-process adapter registry), fetched once.
+  // Empty until loaded — gating tolerates that (treats nothing as debuggable yet).
+  const [debugExtensions, setDebugExtensions] = useState<string[]>([])
+  const debugExtRef = useRef<string[]>([])
+  debugExtRef.current = debugExtensions
+  useEffect(() => {
+    void window.editorApi.debug.adapters().then((list) => setDebugExtensions(list.flatMap((a) => a.extensions)))
+  }, [])
+
+  // The focused tab, when it's a saved file a debug adapter supports; else reports why not.
+  const focusedDebuggableTab = useCallback((): OpenTab | null => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
-    if (!tab || (tab.kind !== undefined && tab.kind !== 'editor') || tab.untitled || !tab.path.endsWith('.py')) {
-      setError('Focus a saved Python (.py) file first')
+    const exts = debugExtRef.current
+    const ext = tab ? tab.path.slice(tab.path.lastIndexOf('.')).toLowerCase() : ''
+    if (!tab || (tab.kind !== undefined && tab.kind !== 'editor') || tab.untitled || !exts.includes(ext)) {
+      const list = exts.length ? exts.join(', ') : 'a supported language'
+      setError(`Focus a saved file the debugger supports (${list})`)
       return null
     }
     return tab
@@ -769,7 +781,7 @@ export function App() {
     const status = debugStatusRef.current
     if (status === 'stopped') { debugStep('continue'); return }
     if (status !== 'idle') return
-    const tab = focusedPythonTab()
+    const tab = focusedDebuggableTab()
     if (!tab) return
     setDebugStatus('starting')
     noDebugRunRef.current = false
@@ -779,13 +791,13 @@ export function App() {
       setDebugStatus('idle')
       debugError(e)
     })
-  }, [debugError, focusedPythonTab, debugStep])
+  }, [debugError, focusedDebuggableTab, debugStep])
 
   // Ctrl+F5: run the focused Python file plainly — no debugpy, breakpoints ignored,
   // output in the (foregrounded) Debug Console.
   const runPythonFile = useCallback(() => {
     if (debugStatusRef.current !== 'idle') return
-    const tab = focusedPythonTab()
+    const tab = focusedDebuggableTab()
     if (!tab) return
     setDebugStatus('starting')
     noDebugRunRef.current = true
@@ -794,7 +806,7 @@ export function App() {
       setDebugStatus('idle')
       debugError(e)
     })
-  }, [debugError, focusedPythonTab])
+  }, [debugError, focusedDebuggableTab])
 
   // Session events from main. On a stop, reveal the stopped file/line (opens the tab if
   // needed) — the highlight itself is driven by debugStopped through the pane tree.
