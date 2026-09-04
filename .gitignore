@@ -33,3 +33,6 @@ tmp/
 
 # Frontend
 .vite/
+
+# Local debugger playground
+shadow/

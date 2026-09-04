@@ -740,6 +740,75 @@ html, body, #app {
 .debug-tool:disabled { opacity: 0.4; }
 .debug-tool-stop { color: #f14c4c; }
 
+/* Run and Debug sidebar panel */
+.dbg-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+.dbg-titlebar { display: flex; align-items: center; justify-content: space-between; padding-right: 10px; }
+.dbg-status { font-size: 11px; color: var(--fg-dim); }
+.dbg-status-stopped { color: #e2b73d; }
+.dbg-status-running { color: #6cbe6c; }
+.dbg-idle { padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.dbg-start-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--fg-bright);
+  font-size: 13px;
+}
+.dbg-start-btn:hover { filter: brightness(1.15); }
+.dbg-vars, .dbg-stack { font-size: 12px; }
+.dbg-scope-label {
+  padding: 3px 8px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+.dbg-var-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dbg-var-row:hover { background: var(--row-hover); }
+.dbg-twist { width: 14px; display: inline-flex; justify-content: center; flex: none; color: var(--fg-dim); }
+.dbg-var-name { color: #9cdcfe; flex: none; }
+.dbg-var-name::after { content: ':'; color: var(--fg-dim); }
+.dbg-var-value {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dbg-loading { color: var(--fg-dim); padding: 2px 8px; }
+.dbg-frame-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dbg-frame-row:hover { background: var(--row-hover); }
+.dbg-frame-row.selected { background: var(--row-active); }
+.dbg-frame-name { overflow: hidden; text-overflow: ellipsis; }
+.dbg-frame-loc { color: var(--fg-dim); font-size: 11px; margin-left: auto; flex: none; }
+
 /* Custom tooltip (lib/tooltip.ts, opted into via data-tooltip). Replaces native title
    tooltips, which render slowly and unreliably in Electron. */
 .app-tooltip {

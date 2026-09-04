@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
-import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus, Play, Square, RedoDot, ArrowDownToDot, ArrowUpFromDot } from 'lucide-preact'
+import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus, Play, Square, RedoDot, ArrowDownToDot, ArrowUpFromDot, BugPlay } from 'lucide-preact'
 import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
 import { FileTree, NewEntryRow } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
@@ -8,6 +8,7 @@ import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
+import { DebugPanel } from './components/DebugPanel'
 import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
@@ -29,7 +30,7 @@ export function App() {
   const [activeLeafId, setActiveLeafId] = useState<string>(() => '')
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
-  const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm'>('explorer')
+  const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm' | 'debug'>('explorer')
   const [scmRefresh, setScmRefresh] = useState(0)
   const [recentFolders, setRecentFolders] = useState<string[]>([])
   const [recentFiles, setRecentFiles] = useState<string[]>([])
@@ -130,7 +131,7 @@ export function App() {
 
   // Clicking an activity-bar view icon: open that view, or toggle collapse if it's the
   // already-active view (VS Code behavior).
-  const selectView = useCallback((view: 'explorer' | 'search' | 'scm') => {
+  const selectView = useCallback((view: 'explorer' | 'search' | 'scm' | 'debug') => {
     setSettingsOpen(false)
     if (!sidebarCollapsed && sidebarView === view) {
       setSidebarCollapsed(true)
@@ -668,6 +669,8 @@ export function App() {
   const [breakpoints, setBreakpointsState] = useState<Map<string, number[]>>(new Map())
   const [debugStatus, setDebugStatus] = useState<'idle' | 'starting' | 'running' | 'stopped'>('idle')
   const [debugStopped, setDebugStopped] = useState<{ path: string; line: number } | null>(null)
+  // Bumped per stopped event so the Run and Debug panel refetches even on a same-line stop.
+  const [debugStoppedToken, setDebugStoppedToken] = useState(0)
   const debugStatusRef = useRef(debugStatus)
   debugStatusRef.current = debugStatus
   const breakpointsRef = useRef(breakpoints)
@@ -722,11 +725,18 @@ export function App() {
   // needed) — the highlight itself is driven by debugStopped through the pane tree.
   useEffect(() => {
     return window.editorApi.debug.onEvent((ev) => {
-      if (ev.kind === 'started') { setDebugStatus('running'); setDebugStopped(null) }
+      if (ev.kind === 'started') {
+        setDebugStatus('running')
+        setDebugStopped(null)
+        // VS Code behavior: a starting session brings up the Run and Debug view.
+        setSidebarView('debug')
+        setSidebarCollapsed(false)
+      }
       else if (ev.kind === 'continued') { setDebugStatus('running'); setDebugStopped(null) }
       else if (ev.kind === 'ended') { setDebugStatus('idle'); setDebugStopped(null) }
       else if (ev.kind === 'stopped') {
         setDebugStatus('stopped')
+        setDebugStoppedToken((n) => n + 1)
         if (ev.path && ev.line) {
           setDebugStopped({ path: ev.path, line: ev.line })
           openMatch(ev.path, ev.path.split('/').pop() ?? ev.path, ev.line)
@@ -1174,6 +1184,13 @@ export function App() {
         >
           <GitBranch size={22} />
         </button>
+        <button
+          class={`act-btn${sidebarView === 'debug' && !settingsOpen && !sidebarCollapsed ? ' active' : ''}`}
+          title="Run and Debug"
+          onClick={() => selectView('debug')}
+        >
+          <BugPlay size={22} />
+        </button>
         <span class="act-spacer" />
         <button
           class={`act-btn${settingsOpen ? ' active' : ''}`}
@@ -1276,6 +1293,14 @@ export function App() {
               <div class="sidebar-empty"><p class="hint">Open a folder to see source control.</p></div>
             </>
           )}
+        </div>
+        <div class={`sidebar-view${sidebarView === 'debug' ? '' : ' hidden'}`}>
+          <DebugPanel
+            status={debugStatus}
+            stoppedToken={debugStoppedToken}
+            onOpenFrame={(p, line) => openMatch(p, p.split('/').pop() ?? p, line)}
+            onStart={startOrContinueDebug}
+          />
         </div>
       </aside>
 

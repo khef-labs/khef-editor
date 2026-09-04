@@ -46,6 +46,10 @@ export function breakpointGutter(onToggle: (line: number) => void): Extension {
       class: 'cm-breakpoint-gutter',
       markers: (view) => view.state.field(breakpointField),
       initialSpacer: () => dot,
+      // Without this, CM only creates per-line gutter elements where a marker exists —
+      // leaving no hover target on breakpoint-less lines, so the faint hover-dot
+      // affordance never shows and the gutter looks like dead space.
+      renderEmptyElements: true,
       domEventHandlers: {
         mousedown(view, block) {
           onToggle(view.state.doc.lineAt(block.from).number)
