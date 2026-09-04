@@ -13,7 +13,7 @@ const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, clearWorkspac
 const { registerSettingsIpc, getRecentFolders, getRecentFiles, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
-const { registerDebugIpc, killDebugSession } = require('./debug-ipc.cjs')
+const { registerDebugIpc, killDebugSession, killAllDebugSessions } = require('./debug-ipc.cjs')
 const ws = require('./workspace.cjs')
 
 const isDev = process.env.KHEF_EDITOR_DEV === '1'
@@ -614,6 +614,9 @@ app.whenReady().then(() => {
 // Mark an explicit quit so the window 'close' guard lets it through.
 app.on('before-quit', () => {
   isQuitting = true
+  // The hidden last window never fires 'closed', so its per-window cleanup wouldn't
+  // run — sweep every live debug session here so no debuggee outlives the app.
+  void killAllDebugSessions()
 })
 
 app.on('window-all-closed', () => {

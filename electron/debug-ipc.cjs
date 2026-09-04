@@ -182,4 +182,10 @@ function registerDebugIpc() {
   })
 }
 
-module.exports = { registerDebugIpc, killDebugSession: killSession }
+// Quit-path safety net: kill every live debuggee (per-window cleanup normally handles
+// this via 'closed', but a hidden last window never closes — it must not leak a child).
+async function killAllDebugSessions() {
+  await Promise.all([...sessions.keys()].map((wcId) => killSession(wcId)))
+}
+
+module.exports = { registerDebugIpc, killDebugSession: killSession, killAllDebugSessions }
