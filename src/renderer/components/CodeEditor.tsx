@@ -20,6 +20,7 @@ import {
 import { highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { languageForFilename, loadLanguageForFilename } from '../lib/language'
+import { breakpointGutter, stoppedLineField, setBreakpointsEffect, setStoppedLineEffect } from '../lib/debugGutter'
 import { editorThemeExtension } from '../lib/editorTheme'
 import type { EditorThemeKey } from '../lib/themes'
 
@@ -93,6 +94,11 @@ interface CodeEditorProps {
   gotoLine?: { line: number; token: number } | null
   onChange: (value: string) => void
   onSave: (content?: string) => void
+  // Debugging: this file's breakpoint lines (1-based), a gutter-click toggle callback,
+  // and the line execution is stopped on (only set when THIS file is the stopped file).
+  breakpoints?: number[]
+  onToggleBreakpoint?: (line: number) => void
+  stoppedLine?: number | null
   // Fired only for USER-originated edits (typing, kill/yank, etc.) — NOT for programmatic
   // doc replacement (path swap, value sync). Used to promote a preview (ephemeral) tab to a
   // permanent one, since editing a soft-opened file commits it (VS Code behavior).
@@ -209,7 +215,7 @@ function extendSelection(view: EditorView, move: (range: SelectionRange) => Sele
   return true
 }
 
-export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
@@ -232,9 +238,11 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
   const onChangeRef = useRef(onChange)
   const onSaveRef = useRef(onSave)
   const onUserEditRef = useRef(onUserEdit)
+  const onToggleBreakpointRef = useRef(onToggleBreakpoint)
   onChangeRef.current = onChange
   onSaveRef.current = onSave
   onUserEditRef.current = onUserEdit
+  onToggleBreakpointRef.current = onToggleBreakpoint
   // Emacs "mark" (set with C-Space): when active, motion commands extend the selection.
   const markActiveRef = useRef(false)
   // Value-sync loop guards (ported from khef's CodeEditor, commits cfb64e9 / fe52cde).
@@ -540,6 +548,8 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
       extensions: [
         buildEmacsExtension(),
         emacsDomHandlers(),
+        breakpointGutter((line) => onToggleBreakpointRef.current?.(line)),
+        stoppedLineField,
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
@@ -739,6 +749,19 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     if (!view) return
     view.dispatch({ effects: themeComp.current.reconfigure(editorThemeExtension(themeKey)) })
   }, [themeKey])
+
+  // Push breakpoints / stopped-line into the editor. Keyed on `path` too so both re-apply
+  // after a path swap replaces the document (these effects are declared after the path
+  // effect, so they run later in the same commit).
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setBreakpointsEffect.of(breakpoints ?? []) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, breakpoints])
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setStoppedLineEffect.of(stoppedLine ?? null) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, stoppedLine])
 
   // Jump to a line (1-based) when a search result is clicked. The token lets the same
   // line re-trigger a jump.

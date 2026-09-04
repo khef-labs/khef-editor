@@ -14,6 +14,7 @@ const DEFAULTS = {
   diffMode: 'split', // diff viewer layout: 'split' (side-by-side) or 'unified' (GitHub-style)
   recentFolders: [], // most-recent-first list of opened workspace roots
   recentFiles: [], // most-recent-first list of files opened as editor tabs
+  pythonPath: '', // debugger interpreter override; empty = auto (.venv/bin/python, else python3)
 }
 
 const MAX_RECENT = 12
@@ -103,4 +104,4 @@ function registerSettingsIpc() {
   })
 }
 
-module.exports = { registerSettingsIpc, DEFAULTS, getRecentFolders, addRecentFolder, getRecentFiles, addRecentFile, setRecentChangeHandler }
+module.exports = { registerSettingsIpc, DEFAULTS, getRecentFolders, addRecentFolder, getRecentFiles, addRecentFile, setRecentChangeHandler, loadSettings: load }

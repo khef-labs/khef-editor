@@ -13,6 +13,7 @@ const { registerFsIpc, setWorkspaceOpenedHandler, clearLooseFiles, clearWorkspac
 const { registerSettingsIpc, getRecentFolders, getRecentFiles, setRecentChangeHandler } = require('./settings.cjs')
 const { registerSearchIpc } = require('./search.cjs')
 const { registerGitIpc } = require('./git.cjs')
+const { registerDebugIpc, killDebugSession } = require('./debug-ipc.cjs')
 const ws = require('./workspace.cjs')
 
 const isDev = process.env.KHEF_EDITOR_DEV === '1'
@@ -78,6 +79,7 @@ function createWindow() {
     ws.clearWorkspaceRoot(wcId)
     clearLooseFiles(wcId)
     clearWorkspaceWatch(wcId)
+    void killDebugSession(wcId) // never orphan a debuggee when its window goes away
   })
 
   return win
@@ -500,6 +502,39 @@ function buildMenu(recentFolders = [], recentFiles = []) {
       ],
     },
     {
+      label: 'Run',
+      submenu: [
+        {
+          // One F5 command, VS Code-style: starts a session when idle, continues when
+          // stopped at a breakpoint. The renderer decides which, from session state.
+          label: 'Start Debugging / Continue',
+          accelerator: 'F5',
+          click: () => sendToFocused('menu:debug-start'),
+        },
+        {
+          label: 'Stop Debugging',
+          accelerator: 'Shift+F5',
+          click: () => sendToFocused('menu:debug-stop'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Step Over',
+          accelerator: 'F10',
+          click: () => sendToFocused('menu:debug-step-over'),
+        },
+        {
+          label: 'Step Into',
+          accelerator: 'F11',
+          click: () => sendToFocused('menu:debug-step-in'),
+        },
+        {
+          label: 'Step Out',
+          accelerator: 'Shift+F11',
+          click: () => sendToFocused('menu:debug-step-out'),
+        },
+      ],
+    },
+    {
       label: 'Window',
       submenu: [
         { role: 'minimize' },
@@ -532,6 +567,7 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerSearchIpc()
   registerGitIpc()
+  registerDebugIpc()
   // Rebuild the Open Recent submenu whenever a folder opens or the lists change.
   setWorkspaceOpenedHandler(() => void refreshMenu())
   setRecentChangeHandler(() => void refreshMenu())

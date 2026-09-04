@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
-import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus } from 'lucide-preact'
+import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus, Play, Square, RedoDot, ArrowDownToDot, ArrowUpFromDot } from 'lucide-preact'
 import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
 import { FileTree, NewEntryRow } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
@@ -664,6 +664,78 @@ export function App() {
     })
   }, [jumpToLine, openPath])
 
+  // ---------- Python debugging (breakpoints + one DAP session per window) ----------
+  const [breakpoints, setBreakpointsState] = useState<Map<string, number[]>>(new Map())
+  const [debugStatus, setDebugStatus] = useState<'idle' | 'starting' | 'running' | 'stopped'>('idle')
+  const [debugStopped, setDebugStopped] = useState<{ path: string; line: number } | null>(null)
+  const debugStatusRef = useRef(debugStatus)
+  debugStatusRef.current = debugStatus
+  const breakpointsRef = useRef(breakpoints)
+  breakpointsRef.current = breakpoints
+
+  // Strip Electron's IPC-error wrapper so the user sees the real message (e.g. the
+  // debugpy install hint), not "Error invoking remote method …".
+  const debugError = useCallback((e: unknown) => {
+    const raw = e instanceof Error ? e.message : String(e)
+    setError(raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''))
+  }, [])
+
+  const toggleBreakpoint = useCallback((path: string, line: number) => {
+    setBreakpointsState((prev) => {
+      const next = new Map(prev)
+      const cur = next.get(path) ?? []
+      const lines = cur.includes(line) ? cur.filter((n) => n !== line) : [...cur, line].sort((a, b) => a - b)
+      if (lines.length === 0) next.delete(path)
+      else next.set(path, lines)
+      // Live-sync into a running session; a no-op when idle.
+      void window.editorApi.debug.setBreakpoints(path, lines).catch(() => {})
+      return next
+    })
+  }, [])
+
+  // F5: start a session on the focused Python file, or continue when stopped.
+  const startOrContinueDebug = useCallback(() => {
+    const status = debugStatusRef.current
+    if (status === 'stopped') { void window.editorApi.debug.command('continue').catch(debugError); return }
+    if (status !== 'idle') return
+    const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
+    const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
+    if (!tab || (tab.kind !== undefined && tab.kind !== 'editor') || tab.untitled || !tab.path.endsWith('.py')) {
+      setError('Start Debugging: focus a saved Python (.py) file first')
+      return
+    }
+    setDebugStatus('starting')
+    const bps = [...breakpointsRef.current.entries()].map(([path, lines]) => ({ path, lines }))
+    window.editorApi.debug.start(tab.path, bps).catch((e) => {
+      setDebugStatus('idle')
+      debugError(e)
+    })
+  }, [debugError])
+
+  const stopDebug = useCallback(() => { void window.editorApi.debug.stop().catch(() => {}) }, [])
+  const debugStep = useCallback((command: 'continue' | 'stepOver' | 'stepIn' | 'stepOut') => {
+    if (debugStatusRef.current !== 'stopped') return
+    void window.editorApi.debug.command(command).catch(debugError)
+  }, [debugError])
+
+  // Session events from main. On a stop, reveal the stopped file/line (opens the tab if
+  // needed) — the highlight itself is driven by debugStopped through the pane tree.
+  useEffect(() => {
+    return window.editorApi.debug.onEvent((ev) => {
+      if (ev.kind === 'started') { setDebugStatus('running'); setDebugStopped(null) }
+      else if (ev.kind === 'continued') { setDebugStatus('running'); setDebugStopped(null) }
+      else if (ev.kind === 'ended') { setDebugStatus('idle'); setDebugStopped(null) }
+      else if (ev.kind === 'stopped') {
+        setDebugStatus('stopped')
+        if (ev.path && ev.line) {
+          setDebugStopped({ path: ev.path, line: ev.line })
+          openMatch(ev.path, ev.path.split('/').pop() ?? ev.path, ev.line)
+        }
+      }
+      // 'output' events are rendered by the Debug Console (plan phase 4).
+    })
+  }, [openMatch])
+
   const activateTab = useCallback((leafId: string, path: string) => {
     setActiveLeafId(leafId)
     setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: path })))
@@ -1024,8 +1096,13 @@ export function App() {
       void window.editorApi.clearRecentFolders().then(setRecentFolders)
       setRecentFiles([])
     })
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide])
+    const offDbgStart = window.editorApi.onMenu('menu:debug-start', () => startOrContinueDebug())
+    const offDbgStop = window.editorApi.onMenu('menu:debug-stop', () => stopDebug())
+    const offDbgOver = window.editorApi.onMenu('menu:debug-step-over', () => debugStep('stepOver'))
+    const offDbgIn = window.editorApi.onMenu('menu:debug-step-in', () => debugStep('stepIn'))
+    const offDbgOut = window.editorApi.onMenu('menu:debug-step-out', () => debugStep('stepOut'))
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -1217,11 +1294,23 @@ export function App() {
           />
         ) : (
           <div class="pane-root">
+            {debugStatus !== 'idle' && (
+              <div class="debug-toolbar" data-testid="debug-toolbar">
+                <button class="debug-tool" title="Continue (F5)" disabled={debugStatus !== 'stopped'} onClick={() => debugStep('continue')}><Play size={15} /></button>
+                <button class="debug-tool" title="Step Over (F10)" disabled={debugStatus !== 'stopped'} onClick={() => debugStep('stepOver')}><RedoDot size={15} /></button>
+                <button class="debug-tool" title="Step Into (F11)" disabled={debugStatus !== 'stopped'} onClick={() => debugStep('stepIn')}><ArrowDownToDot size={15} /></button>
+                <button class="debug-tool" title="Step Out (Shift+F11)" disabled={debugStatus !== 'stopped'} onClick={() => debugStep('stepOut')}><ArrowUpFromDot size={15} /></button>
+                <button class="debug-tool debug-tool-stop" title="Stop Debugging (Shift+F5)" onClick={stopDebug}><Square size={14} /></button>
+              </div>
+            )}
             <PaneTree
               node={tree}
               activeLeafId={activeLeafId}
               themeId={themeId}
               gotoLine={pendingJump}
+              breakpoints={breakpoints}
+              onToggleBreakpoint={toggleBreakpoint}
+              debugStopped={debugStopped}
               onFocus={setActiveLeafId}
               onActivateTab={activateTab}
               onCloseTab={closeTab}

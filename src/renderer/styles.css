@@ -353,6 +353,7 @@ html, body, #app {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  position: relative; /* anchors the floating .debug-toolbar */
 }
 /* Always-visible thin scrollbar (VS Code-style) instead of macOS overlay that fades. */
 .pane-root::-webkit-scrollbar { height: 10px; }
@@ -685,6 +686,59 @@ html, body, #app {
 .find-btn:hover:not(:disabled) { background: var(--row-hover); color: var(--fg); }
 .find-btn.active { background: var(--accent-subtle, rgba(0, 122, 204, 0.4)); color: var(--fg-bright); }
 .find-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Debugging: breakpoint gutter, stopped-line highlight, floating session toolbar */
+.cm-breakpoint-gutter {
+  width: 16px;
+  cursor: pointer;
+}
+.cm-breakpoint-dot {
+  width: 10px;
+  height: 10px;
+  margin: 3px auto 0;
+  border-radius: 50%;
+  background: #e51400; /* VS Code breakpoint red */
+}
+/* Faint dot preview on hover over an empty gutter row. */
+.cm-breakpoint-gutter .cm-gutterElement:hover::before {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 3px auto 0;
+  border-radius: 50%;
+  background: rgba(229, 20, 0, 0.35);
+}
+.cm-breakpoint-gutter .cm-gutterElement:has(.cm-breakpoint-dot):hover::before { display: none; }
+.cm-debug-stopped-line {
+  background: rgba(255, 220, 100, 0.16) !important; /* beats active-line rules */
+  outline: 1px solid rgba(255, 220, 100, 0.28);
+  outline-offset: -1px;
+}
+.debug-toolbar {
+  position: absolute;
+  top: 42px; /* below the tab row */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 3px 6px;
+  background: var(--bg-activity);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.debug-tool {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--fg);
+}
+.debug-tool:hover:not(:disabled) { background: var(--row-hover); }
+.debug-tool:disabled { opacity: 0.4; }
+.debug-tool-stop { color: #f14c4c; }
 
 /* Custom tooltip (lib/tooltip.ts, opted into via data-tooltip). Replaces native title
    tooltips, which render slowly and unreliably in Electron. */

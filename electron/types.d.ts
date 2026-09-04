@@ -94,6 +94,56 @@ export interface AppSettings {
   sidebarWidth: number
   // Diff viewer layout: side-by-side ('split') or single-column GitHub-style ('unified').
   diffMode?: 'split' | 'unified'
+  // Debugger interpreter override; empty/absent = auto (.venv/bin/python, else python3).
+  pythonPath?: string
+}
+
+// --- Python debugging (DAP via debugpy; one session per window) ---
+
+export interface FileBreakpoints {
+  path: string
+  lines: number[]
+}
+
+export type DebugEvent =
+  | { kind: 'started' }
+  | { kind: 'stopped'; reason: string; path: string | null; line: number | null }
+  | { kind: 'continued' }
+  | { kind: 'output'; channel: 'stdout' | 'stderr'; text: string }
+  | { kind: 'ended'; code: number | null }
+
+export type DebugCommand = 'continue' | 'stepOver' | 'stepIn' | 'stepOut'
+
+export interface DebugStackFrame {
+  id: number
+  name: string
+  line: number
+  column: number
+  source?: { path?: string; name?: string }
+}
+
+export interface DebugScope {
+  name: string
+  variablesReference: number
+  expensive?: boolean
+}
+
+export interface DebugVariable {
+  name: string
+  value: string
+  type?: string
+  variablesReference: number
+}
+
+export interface DebugApi {
+  start(filePath: string, breakpoints: FileBreakpoints[]): Promise<{ ok: boolean; python: string }>
+  setBreakpoints(filePath: string, lines: number[]): Promise<{ active: boolean }>
+  command(command: DebugCommand): Promise<{ ok: boolean }>
+  stop(): Promise<{ ok: boolean }>
+  stackTrace(): Promise<{ stackFrames: DebugStackFrame[] }>
+  scopes(frameId: number): Promise<{ scopes: DebugScope[] }>
+  variables(variablesReference: number): Promise<{ variables: DebugVariable[] }>
+  onEvent(handler: (event: DebugEvent) => void): () => void
 }
 
 export interface GitInfo {
@@ -148,7 +198,7 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out'
 
 // Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
 // the file was written outside the workspace root (subsequent saves go through the loose gate).
@@ -201,6 +251,7 @@ export interface EditorApi {
   clearRecentFolders(): Promise<string[]>
   onWorkspaceChanged(handler: (payload: WorkspaceChangedPayload) => void): () => void
   git: GitApi
+  debug: DebugApi
   onMenu(channel: 'menu:open-loose', handler: (payload: LooseOpenPayload) => void): () => void
   onMenu(channel: 'menu:open-launch', handler: (request: LaunchOpenRequest) => void): () => void
   onMenu(channel: MenuChannel, handler: (...args: string[]) => void): () => void

@@ -9,6 +9,9 @@ interface PaneTreeProps {
   activeLeafId: string
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
+  breakpoints: Map<string, number[]>
+  onToggleBreakpoint: (path: string, line: number) => void
+  debugStopped: { path: string; line: number } | null
   onFocus: (leafId: string) => void
   onActivateTab: (leafId: string, path: string) => void
   onCloseTab: (leafId: string, path: string) => void
@@ -127,7 +130,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -136,6 +139,9 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, onFocus, onActivateTab, o
       isFocused={leaf.id === activeLeafId}
       themeId={themeId}
       gotoLine={gotoLine}
+      breakpoints={breakpoints}
+      onToggleBreakpoint={onToggleBreakpoint}
+      debugStopped={debugStopped}
       onFocus={() => onFocus(leaf.id)}
       onActivateTab={(path) => onActivateTab(leaf.id, path)}
       onCloseTab={(path) => onCloseTab(leaf.id, path)}
