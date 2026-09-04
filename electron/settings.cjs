@@ -15,6 +15,7 @@ const DEFAULTS = {
   recentFolders: [], // most-recent-first list of opened workspace roots
   recentFiles: [], // most-recent-first list of files opened as editor tabs
   pythonPath: '', // debugger interpreter override; empty = auto (.venv/bin/python, else python3)
+  rdbgPath: '', // ruby debugger (rdbg) override; empty = auto (login-shell lookup, else rdbg)
 }
 
 const MAX_RECENT = 12

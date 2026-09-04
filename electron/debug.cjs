@@ -163,21 +163,27 @@ class DebugSession extends EventEmitter {
  * until after configurationDone, so it must not be awaited during the handshake — only
  * the `initialized` EVENT gates breakpoint setup.
  *
- * `noDebug` runs the program plainly (Run Python File): no debugpy, no socket; the
- * returned session still emits stdout/stderr/exit but has no DAP surface.
+ * `noDebug` runs the program plainly (Run File): no adapter, no socket; the returned
+ * session still emits stdout/stderr/exit but has no DAP surface.
+ *
+ * Language specifics come entirely from the passed spec (see electron/debug-adapters.cjs),
+ * so this function has no per-language knowledge:
+ *   debugBinary  — the adapter binary to spawn for a debug session (python, rdbg, …)
+ *   runBinary    — the binary for a plain noDebug run (python, ruby, …)
+ *   debugArgs(port, program) / runArgs(program) — argv builders after the binary
+ *   env          — extra spawn env for the debug session
+ *   initializeArgs / attachArgs — DAP handshake args
  */
-async function launch({ python, program, cwd, noDebug = false }) {
+async function launch({ debugBinary, runBinary, program, cwd, debugArgs, runArgs, env = {}, initializeArgs, attachArgs, noDebug = false }) {
   if (noDebug) {
-    const child = spawn(python, ['-u', program], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(runBinary, runArgs(program), { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     return { session: new DebugSession(child, new net.Socket(), { dap: false }), capabilities: null }
   }
 
   const port = await freePort()
-  const child = spawn(
-    python,
-    ['-Xfrozen_modules=off', '-m', 'debugpy', '--listen', `127.0.0.1:${port}`, '--wait-for-client', program],
-    { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PYDEVD_DISABLE_FILE_VALIDATION: '1' } },
-  )
+  const child = spawn(debugBinary, debugArgs(port, program), {
+    cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env },
+  })
 
   let sock
   try {
@@ -188,16 +194,9 @@ async function launch({ python, program, cwd, noDebug = false }) {
   }
 
   const session = new DebugSession(child, sock)
-  const capabilities = await session.request('initialize', {
-    clientID: 'khef-editor',
-    adapterID: 'debugpy',
-    pathFormat: 'path',
-    linesStartAt1: true,
-    columnsStartAt1: true,
-    supportsVariableType: true,
-  })
+  const capabilities = await session.request('initialize', initializeArgs)
   const initialized = session.waitForEvent('initialized')
-  void session.request('attach', { justMyCode: true }).catch(() => {}) // acked post-configurationDone
+  void session.request('attach', attachArgs).catch(() => {}) // acked post-configurationDone
   await initialized
   return { session, capabilities }
 }

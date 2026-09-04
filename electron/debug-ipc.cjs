@@ -24,22 +24,62 @@ const path = require('node:path')
 const ws = require('./workspace.cjs')
 const { launch } = require('./debug.cjs')
 const { loadSettings } = require('./settings.cjs')
+const { ADAPTERS, adapterForFile, adapterList } = require('./debug-adapters.cjs')
 
 // wcId -> { session, threadId, ended }
 const sessions = new Map()
 
-async function resolvePython(root) {
-  const configured = (await loadSettings()).pythonPath
-  if (configured && typeof configured === 'string') return configured
-  const venv = path.join(root, '.venv', 'bin', 'python')
-  if (fs.existsSync(venv)) return venv
-  return 'python3'
+// Resolve a command via the user's LOGIN shell, exactly as their terminal would. A
+// Finder-launched app inherits the GUI PATH (/usr/bin:/bin), missing version-manager
+// shims (rvm/rbenv/nvm), so `command -v <x>` under `$SHELL -lc` is the reliable lookup.
+// Cached per app run (keyed by command name); re-resolved only if the cached path vanishes.
+const shellLookupCache = new Map()
+function shellWhich(cmd) {
+  const cached = shellLookupCache.get(cmd)
+  if (cached && fs.existsSync(cached)) return Promise.resolve(cached)
+  return new Promise((resolve) => {
+    const shell = process.env.SHELL || '/bin/bash'
+    execFile(shell, ['-lc', `command -v ${cmd}`], { timeout: 8000 }, (err, stdout) => {
+      const p = (stdout || '').trim().split('\n').pop()
+      if (!err && p && fs.existsSync(p)) { shellLookupCache.set(cmd, p); resolve(p) }
+      else resolve(null)
+    })
+  })
 }
 
-// `python -c "import debugpy"` — argv array, no shell.
-function preflightDebugpy(python, cwd) {
+// Per-adapter resolution of { debugBinary, runBinary }. Order: explicit setting →
+// language-specific auto → login-shell lookup → bare name. Returns strings (never throws);
+// preflight decides whether the resolved binary actually works.
+async function resolveBinaries(adapter, root) {
+  const settings = await loadSettings()
+  const override = (settings[adapter.settingKey] || '').trim()
+
+  if (adapter.id === 'python') {
+    let bin = override
+    if (!bin) {
+      const venv = path.join(root, '.venv', 'bin', 'python')
+      bin = fs.existsSync(venv) ? venv : (await shellWhich('python3')) || 'python3'
+    }
+    return { debugBinary: bin, runBinary: bin } // debugpy is `python -m debugpy`
+  }
+
+  if (adapter.id === 'ruby') {
+    // The debug binary is rdbg; plain runs use ruby (prefer a sibling of the resolved
+    // rdbg so the interpreter matches the debugger's ruby).
+    const rdbg = override || (await shellWhich('rdbg')) || 'rdbg'
+    const sibling = rdbg.includes('/') ? path.join(path.dirname(rdbg), 'ruby') : null
+    const runBinary = sibling && fs.existsSync(sibling) ? sibling : (await shellWhich('ruby')) || 'ruby'
+    return { debugBinary: rdbg, runBinary }
+  }
+
+  const bin = override || adapter.id
+  return { debugBinary: bin, runBinary: bin }
+}
+
+// Cheap toolchain probe (argv array, no shell) using the adapter's preflightArgs.
+function preflight(adapter, debugBinary, cwd) {
   return new Promise((resolve) => {
-    execFile(python, ['-c', 'import debugpy'], { cwd, timeout: 10000 }, (err) => resolve(!err))
+    execFile(debugBinary, adapter.preflightArgs, { cwd, timeout: 10000 }, (err) => resolve(!err))
   })
 }
 
@@ -65,17 +105,28 @@ function registerDebugIpc() {
     await killSession(wcId)
     const noDebug = !!(opts && opts.noDebug)
 
-    const program = await ws.resolveExisting(wcId, filePath)
-    const python = await resolvePython(root)
-    // A plain run (noDebug) needs no debugpy — only debug sessions do.
-    if (!noDebug && !(await preflightDebugpy(python, root))) {
-      throw new Error(
-        `debugpy is not installed for ${python}. Install it with:\n  ${python} -m pip install debugpy`,
-      )
+    const adapter = adapterForFile(filePath)
+    if (!adapter) {
+      const exts = adapterList().flatMap((a) => a.extensions).join(', ')
+      throw new Error(`No debugger for this file type. Supported: ${exts}`)
     }
 
-    const { session } = await launch({ python, program, cwd: root, noDebug })
-    const entry = { session, threadId: null, ended: false }
+    const program = await ws.resolveExisting(wcId, filePath)
+    const { debugBinary, runBinary } = await resolveBinaries(adapter, root)
+    // A plain run (noDebug) needs no debug adapter — only debug sessions do.
+    if (!noDebug && !(await preflight(adapter, debugBinary, root))) {
+      throw new Error(adapter.installHint(debugBinary))
+    }
+
+    const { session } = await launch({
+      debugBinary, runBinary, program, cwd: root, noDebug,
+      debugArgs: adapter.debugArgs, runArgs: adapter.runArgs, env: adapter.env,
+      initializeArgs: adapter.initializeArgs, attachArgs: adapter.attachArgs,
+    })
+    // Adapters that suspend at load (rdbg) surface a synthetic entry pause before the
+    // program runs. Swallow that FIRST stop and auto-continue, so the user only ever sees
+    // real breakpoint/step stops — matching debugpy, which has no entry pause.
+    const entry = { session, threadId: null, ended: false, swallowEntryPause: !noDebug && !!adapter.pausesAtEntry }
     sessions.set(wcId, entry)
 
     const end = (code) => {
@@ -92,6 +143,12 @@ function registerDebugIpc() {
       if (msg.event === 'stopped') {
         const threadId = msg.body?.threadId
         entry.threadId = threadId
+        // Auto-continue past an adapter's one-time load pause (see swallowEntryPause).
+        if (entry.swallowEntryPause) {
+          entry.swallowEntryPause = false
+          void session.continue_(threadId).catch(() => {})
+          return
+        }
         // Fetch the top frame here so the renderer gets location in one event.
         session.stackTrace(threadId).then(
           (st) => {
@@ -123,7 +180,7 @@ function registerDebugIpc() {
       await session.configurationDone()
     }
     sendEvent(event, { kind: 'started' })
-    return { ok: true, python }
+    return { ok: true, adapter: adapter.id, binary: debugBinary }
   })
 
   // Live-update breakpoints for one file while a session runs (no-op when idle).
@@ -180,6 +237,10 @@ function registerDebugIpc() {
     if (!entry || entry.ended) return { variables: [] }
     return entry.session.variables(variablesReference)
   })
+
+  // Which languages the debugger supports — the renderer gates F5/Run on this instead
+  // of hard-coding a `.py` list.
+  ipcMain.handle('debug:adapters', async () => adapterList())
 }
 
 // Quit-path safety net: kill every live debuggee (per-window cleanup normally handles
