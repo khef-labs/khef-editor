@@ -2,6 +2,7 @@ import { TabBar } from './TabBar'
 import { CodeEditor } from './CodeEditor'
 import { PreviewPane } from './PreviewPane'
 import { DiffView } from './DiffView'
+import { ConsolePane, type ConsoleChunk } from './ConsolePane'
 import type { EditorGroup } from '../lib/editorGroups'
 import type { TabDragSource } from '../lib/tabDrag'
 import { themeById } from '../lib/themes'
@@ -16,6 +17,7 @@ interface EditorGroupViewProps {
   breakpoints: Map<string, number[]>
   onToggleBreakpoint: (path: string, line: number) => void
   debugStopped: { path: string; line: number } | null
+  debugConsole: ConsoleChunk[]
   onFocus: () => void
   onActivateTab: (path: string) => void
   onCloseTab: (path: string) => void
@@ -37,7 +39,7 @@ interface EditorGroupViewProps {
 }
 
 export function EditorGroupView({
-  group, isFocused, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped,
+  group, isFocused, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave,
   onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
@@ -74,6 +76,8 @@ export function EditorGroupView({
             />
           ) : activeTab.kind === 'diff' && activeTab.diff ? (
             <DiffView spec={activeTab.diff} />
+          ) : activeTab.kind === 'console' ? (
+            <ConsolePane chunks={debugConsole} />
           ) : (
             <CodeEditor
               path={activeTab.path}

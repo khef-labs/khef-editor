@@ -8,7 +8,7 @@ export interface OpenTab {
   content: string
   savedContent: string
   loose?: boolean
-  kind?: 'editor' | 'preview' | 'diff'
+  kind?: 'editor' | 'preview' | 'diff' | 'console'
   sourcePath?: string
   diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
   // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Only set
@@ -27,8 +27,8 @@ export interface EditorGroup {
 // Hover tooltip for a tab: the real file path, not the synthetic tab id. Preview tabs
 // point at their source file, diff tabs at the repo-relative file under diff, untitled
 // buffers have no path so the buffer name stands in.
-export function tabHoverPath(tab: Pick<OpenTab, 'path' | 'name' | 'sourcePath' | 'diff' | 'untitled'>): string {
-  if (tab.untitled) return tab.name
+export function tabHoverPath(tab: Pick<OpenTab, 'path' | 'name' | 'sourcePath' | 'diff' | 'untitled' | 'kind'>): string {
+  if (tab.untitled || tab.kind === 'console') return tab.name
   if (tab.sourcePath) return tab.sourcePath
   if (tab.diff) return tab.diff.file
   return tab.path

@@ -12,9 +12,10 @@ export interface OpenTab {
   // through the per-file loose-write gate, not the workspace-confined write.
   loose?: boolean
   // 'editor' (default) shows the CodeMirror editor; 'preview' renders the source file as
-  // Markdown/Mermaid; 'diff' shows a read-only side-by-side git diff. preview/diff tabs use
-  // a synthetic path so they're distinct from the editor tab.
-  kind?: 'editor' | 'preview' | 'diff'
+  // Markdown/Mermaid; 'diff' shows a read-only side-by-side git diff; 'console' is the
+  // Debug Console (program output; content lives in App state, not the tab). Synthetic
+  // kinds use a synthetic path so they're distinct from editor tabs.
+  kind?: 'editor' | 'preview' | 'diff' | 'console'
   sourcePath?: string
   // For diff tabs: the diff spec (mode/file/hash).
   diff?: { mode: 'working' | 'commit'; file: string; hash?: string }

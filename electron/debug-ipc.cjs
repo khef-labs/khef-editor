@@ -58,21 +58,23 @@ async function killSession(wcId) {
 function registerDebugIpc() {
   // Start a session on `filePath` with breakpoints [{ path, lines }]. Any prior
   // session in this window is killed first (restart semantics).
-  ipcMain.handle('debug:start', async (event, filePath, breakpoints) => {
+  ipcMain.handle('debug:start', async (event, filePath, breakpoints, opts) => {
     const wcId = event.sender.id
     const root = ws.getWorkspaceRoot(wcId)
     if (!root) throw new Error('No workspace open')
     await killSession(wcId)
+    const noDebug = !!(opts && opts.noDebug)
 
     const program = await ws.resolveExisting(wcId, filePath)
     const python = await resolvePython(root)
-    if (!(await preflightDebugpy(python, root))) {
+    // A plain run (noDebug) needs no debugpy — only debug sessions do.
+    if (!noDebug && !(await preflightDebugpy(python, root))) {
       throw new Error(
         `debugpy is not installed for ${python}. Install it with:\n  ${python} -m pip install debugpy`,
       )
     }
 
-    const { session } = await launch({ python, program, cwd: root })
+    const { session } = await launch({ python, program, cwd: root, noDebug })
     const entry = { session, threadId: null, ended: false }
     sessions.set(wcId, entry)
 
@@ -110,13 +112,16 @@ function registerDebugIpc() {
       }
     })
 
-    // Apply breakpoints (paths confined), then let the program run.
-    for (const bp of Array.isArray(breakpoints) ? breakpoints : []) {
-      const real = await ws.resolveExisting(wcId, bp.path)
-      const lines = (bp.lines ?? []).filter((n) => Number.isInteger(n) && n > 0)
-      if (lines.length > 0) await session.setBreakpoints(real, lines)
+    // Apply breakpoints (paths confined), then let the program run. A noDebug session
+    // has no DAP surface — the child is already running.
+    if (!noDebug) {
+      for (const bp of Array.isArray(breakpoints) ? breakpoints : []) {
+        const real = await ws.resolveExisting(wcId, bp.path)
+        const lines = (bp.lines ?? []).filter((n) => Number.isInteger(n) && n > 0)
+        if (lines.length > 0) await session.setBreakpoints(real, lines)
+      }
+      await session.configurationDone()
     }
-    await session.configurationDone()
     sendEvent(event, { kind: 'started' })
     return { ok: true, python }
   })
@@ -149,7 +154,13 @@ function registerDebugIpc() {
   })
 
   ipcMain.handle('debug:stop', async (event) => {
+    const had = sessions.has(event.sender.id)
     await killSession(event.sender.id)
+    // killSession marks the entry ended, which suppresses the child-exit 'ended' event
+    // (that guard exists so a restart's kill-of-the-old-session can't emit a stale
+    // 'ended' after the new session's 'started'). An explicit stop must therefore send
+    // its own — without this the renderer stays in debug mode forever.
+    if (had) sendEvent(event, { kind: 'ended', code: null })
     return { ok: true }
   })
 

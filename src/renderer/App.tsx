@@ -9,6 +9,10 @@ import { PaneTree } from './components/PaneTree'
 import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
 import { DebugPanel } from './components/DebugPanel'
+import type { ConsoleChunk } from './components/ConsolePane'
+
+// The one Debug Console tab per window (synthetic path, kind 'console').
+const CONSOLE_PATH = 'debug-console://main'
 import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
@@ -676,6 +680,38 @@ export function App() {
   const breakpointsRef = useRef(breakpoints)
   breakpointsRef.current = breakpoints
 
+  // Debug Console: program output as append-only chunks (App state, not tab content —
+  // stderr keeps its channel for coloring). Capped so a chatty program can't grow
+  // memory without bound. One console tab per window, identified by CONSOLE_PATH.
+  const [consoleChunks, setConsoleChunks] = useState<ConsoleChunk[]>([])
+  const appendConsole = useCallback((chunk: ConsoleChunk) => {
+    setConsoleChunks((prev) => {
+      const next = prev.length >= 5000 ? [...prev.slice(-4000), chunk] : [...prev, chunk]
+      return next
+    })
+  }, [])
+
+  // Open (or reveal) the Debug Console tab in the focused leaf. `activate` foregrounds
+  // it — used for plain runs, where the output IS the result; a debug session adds the
+  // tab in the background so the stopped file stays visible.
+  const openConsoleTab = useCallback((activate: boolean) => {
+    const leafId = activeLeafIdRef.current
+    setTree((prev) => {
+      const leaf = findLeaf(prev, leafId)
+      const existsIn = leaves(prev).find((l) => l.tabs.some((t) => t.path === CONSOLE_PATH))
+      if (existsIn) {
+        return activate ? updateLeaf(prev, existsIn.id, (l) => ({ ...l, activePath: CONSOLE_PATH })) : prev
+      }
+      if (!leaf) return prev
+      const tab: OpenTab = { path: CONSOLE_PATH, name: 'Debug Console', content: '', savedContent: '', kind: 'console' }
+      return updateLeaf(prev, leafId, (l) => ({
+        ...l,
+        tabs: [...l.tabs, tab],
+        activePath: activate ? CONSOLE_PATH : l.activePath,
+      }))
+    })
+  }, [])
+
   // Strip Electron's IPC-error wrapper so the user sees the real message (e.g. the
   // debugpy install hint), not "Error invoking remote method …".
   const debugError = useCallback((e: unknown) => {
@@ -696,30 +732,69 @@ export function App() {
     })
   }, [])
 
-  // F5: start a session on the focused Python file, or continue when stopped.
-  const startOrContinueDebug = useCallback(() => {
-    const status = debugStatusRef.current
-    if (status === 'stopped') { void window.editorApi.debug.command('continue').catch(debugError); return }
-    if (status !== 'idle') return
+  // The focused tab, when it's a debuggable Python file; otherwise reports why not.
+  const focusedPythonTab = useCallback((): OpenTab | null => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
     if (!tab || (tab.kind !== undefined && tab.kind !== 'editor') || tab.untitled || !tab.path.endsWith('.py')) {
-      setError('Start Debugging: focus a saved Python (.py) file first')
-      return
+      setError('Focus a saved Python (.py) file first')
+      return null
     }
+    return tab
+  }, [])
+
+  // Whether the running session is a plain run (Ctrl+F5) rather than a debug session —
+  // decides if the Debug Console foregrounds on start.
+  const noDebugRunRef = useRef(false)
+
+  // Belt-and-suspenders: even if the 'ended' event is ever lost, a resolved stop —
+  // or any command answered by a session that no longer exists ({ok:false}) — resets
+  // the renderer to idle so the UI can never wedge in debug mode.
+  const stopDebug = useCallback(() => {
+    window.editorApi.debug.stop().then(
+      () => { setDebugStatus('idle'); setDebugStopped(null) },
+      () => { setDebugStatus('idle'); setDebugStopped(null) },
+    )
+  }, [])
+  const debugStep = useCallback((command: 'continue' | 'stepOver' | 'stepIn' | 'stepOut') => {
+    if (debugStatusRef.current !== 'stopped') return
+    window.editorApi.debug.command(command).then(
+      (r) => { if (!r.ok) { setDebugStatus('idle'); setDebugStopped(null) } },
+      (e) => debugError(e),
+    )
+  }, [debugError])
+
+  // F5: start a session on the focused Python file, or continue when stopped.
+  const startOrContinueDebug = useCallback(() => {
+    const status = debugStatusRef.current
+    if (status === 'stopped') { debugStep('continue'); return }
+    if (status !== 'idle') return
+    const tab = focusedPythonTab()
+    if (!tab) return
     setDebugStatus('starting')
+    noDebugRunRef.current = false
+    setConsoleChunks([])
     const bps = [...breakpointsRef.current.entries()].map(([path, lines]) => ({ path, lines }))
     window.editorApi.debug.start(tab.path, bps).catch((e) => {
       setDebugStatus('idle')
       debugError(e)
     })
-  }, [debugError])
+  }, [debugError, focusedPythonTab, debugStep])
 
-  const stopDebug = useCallback(() => { void window.editorApi.debug.stop().catch(() => {}) }, [])
-  const debugStep = useCallback((command: 'continue' | 'stepOver' | 'stepIn' | 'stepOut') => {
-    if (debugStatusRef.current !== 'stopped') return
-    void window.editorApi.debug.command(command).catch(debugError)
-  }, [debugError])
+  // Ctrl+F5: run the focused Python file plainly — no debugpy, breakpoints ignored,
+  // output in the (foregrounded) Debug Console.
+  const runPythonFile = useCallback(() => {
+    if (debugStatusRef.current !== 'idle') return
+    const tab = focusedPythonTab()
+    if (!tab) return
+    setDebugStatus('starting')
+    noDebugRunRef.current = true
+    setConsoleChunks([])
+    window.editorApi.debug.start(tab.path, [], { noDebug: true }).catch((e) => {
+      setDebugStatus('idle')
+      debugError(e)
+    })
+  }, [debugError, focusedPythonTab])
 
   // Session events from main. On a stop, reveal the stopped file/line (opens the tab if
   // needed) — the highlight itself is driven by debugStopped through the pane tree.
@@ -728,12 +803,21 @@ export function App() {
       if (ev.kind === 'started') {
         setDebugStatus('running')
         setDebugStopped(null)
-        // VS Code behavior: a starting session brings up the Run and Debug view.
-        setSidebarView('debug')
-        setSidebarCollapsed(false)
+        // A plain run foregrounds the console (the output IS the result); a debug
+        // session adds it in the background and brings up the Run and Debug view.
+        openConsoleTab(noDebugRunRef.current)
+        if (!noDebugRunRef.current) {
+          setSidebarView('debug')
+          setSidebarCollapsed(false)
+        }
       }
+      else if (ev.kind === 'output') { appendConsole({ channel: ev.channel, text: ev.text }) }
       else if (ev.kind === 'continued') { setDebugStatus('running'); setDebugStopped(null) }
-      else if (ev.kind === 'ended') { setDebugStatus('idle'); setDebugStopped(null) }
+      else if (ev.kind === 'ended') {
+        setDebugStatus('idle')
+        setDebugStopped(null)
+        appendConsole({ channel: 'status', text: `\n[process exited${ev.code != null ? ` with code ${ev.code}` : ''}]\n` })
+      }
       else if (ev.kind === 'stopped') {
         setDebugStatus('stopped')
         setDebugStoppedToken((n) => n + 1)
@@ -742,9 +826,8 @@ export function App() {
           openMatch(ev.path, ev.path.split('/').pop() ?? ev.path, ev.line)
         }
       }
-      // 'output' events are rendered by the Debug Console (plan phase 4).
     })
-  }, [openMatch])
+  }, [openMatch, openConsoleTab, appendConsole])
 
   const activateTab = useCallback((leafId: string, path: string) => {
     setActiveLeafId(leafId)
@@ -1111,8 +1194,9 @@ export function App() {
     const offDbgOver = window.editorApi.onMenu('menu:debug-step-over', () => debugStep('stepOver'))
     const offDbgIn = window.editorApi.onMenu('menu:debug-step-in', () => debugStep('stepIn'))
     const offDbgOut = window.editorApi.onMenu('menu:debug-step-out', () => debugStep('stepOut'))
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep])
+    const offRunFile = window.editorApi.onMenu('menu:run-file', () => runPythonFile())
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -1336,6 +1420,7 @@ export function App() {
               breakpoints={breakpoints}
               onToggleBreakpoint={toggleBreakpoint}
               debugStopped={debugStopped}
+              debugConsole={consoleChunks}
               onFocus={setActiveLeafId}
               onActivateTab={activateTab}
               onCloseTab={closeTab}
@@ -1385,7 +1470,7 @@ export function App() {
         // still refer to a real disk file (sourcePath / the diffed file), so path
         // actions target THAT file; only untitled tabs have nothing on disk.
         const synthetic = !!menuTab.untitled || menuTab.kind === 'preview' || menuTab.kind === 'diff'
-        const filePath = menuTab.untitled ? null
+        const filePath = menuTab.untitled || menuTab.kind === 'console' ? null
           : menuTab.kind === 'preview' ? (menuTab.sourcePath ?? null)
           : menuTab.kind === 'diff' ? (root && menuTab.diff ? `${root}/${menuTab.diff.file}` : null)
           : menuTab.path

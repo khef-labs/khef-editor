@@ -55,10 +55,11 @@ function connectWithRetry(port) {
 // Emits: 'dap-event' (every DAP event), 'stdout' / 'stderr' (program output chunks as
 // strings), 'exit' ({ code }) exactly once when the child ends.
 class DebugSession extends EventEmitter {
-  constructor(child, sock) {
+  constructor(child, sock, { dap = true } = {}) {
     super()
     this.child = child
     this.sock = sock
+    this.dap = dap // false for plain (noDebug) runs — no adapter behind the socket
     this.seq = 1
     this.pending = new Map() // seq -> { resolve, reject, timer, command }
     this.exited = false
@@ -142,7 +143,9 @@ class DebugSession extends EventEmitter {
   // End the session: try a graceful disconnect, then make sure the child is gone. Safe
   // to call twice. Never leaves an orphaned debuggee.
   async kill() {
-    try { await this.request('disconnect', { terminateDebuggee: true }, { timeoutMs: 1000 }) } catch { /* force below */ }
+    if (this.dap) {
+      try { await this.request('disconnect', { terminateDebuggee: true }, { timeoutMs: 1000 }) } catch { /* force below */ }
+    }
     this.sock.destroy()
     if (!this.exited) {
       this.child.kill('SIGTERM')
@@ -166,7 +169,7 @@ class DebugSession extends EventEmitter {
 async function launch({ python, program, cwd, noDebug = false }) {
   if (noDebug) {
     const child = spawn(python, ['-u', program], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    return { session: new DebugSession(child, new net.Socket()), capabilities: null }
+    return { session: new DebugSession(child, new net.Socket(), { dap: false }), capabilities: null }
   }
 
   const port = await freePort()

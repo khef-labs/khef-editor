@@ -740,6 +740,25 @@ html, body, #app {
 .debug-tool:disabled { opacity: 0.4; }
 .debug-tool-stop { color: #f14c4c; }
 
+/* Debug Console tab */
+.console-pane {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 8px 12px;
+}
+.console-empty { color: var(--fg-dim); font-size: 12px; }
+.console-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+}
+.console-stderr { color: #f48771; }
+.console-status { color: var(--fg-dim); font-style: italic; }
+
 /* Run and Debug sidebar panel */
 .dbg-panel {
   display: flex;

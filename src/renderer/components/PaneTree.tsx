@@ -3,6 +3,7 @@ import { useRef } from 'preact/hooks'
 import { EditorGroupView } from './EditorGroupView'
 import type { LayoutNode, LeafNode, SplitNode, OpenTab } from '../lib/layout'
 import type { TabDragSource } from '../lib/tabDrag'
+import type { ConsoleChunk } from './ConsolePane'
 
 interface PaneTreeProps {
   node: LayoutNode
@@ -12,6 +13,7 @@ interface PaneTreeProps {
   breakpoints: Map<string, number[]>
   onToggleBreakpoint: (path: string, line: number) => void
   debugStopped: { path: string; line: number } | null
+  debugConsole: ConsoleChunk[]
   onFocus: (leafId: string) => void
   onActivateTab: (leafId: string, path: string) => void
   onCloseTab: (leafId: string, path: string) => void
@@ -130,7 +132,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, debugConsole, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -142,6 +144,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBrea
       breakpoints={breakpoints}
       onToggleBreakpoint={onToggleBreakpoint}
       debugStopped={debugStopped}
+      debugConsole={debugConsole}
       onFocus={() => onFocus(leaf.id)}
       onActivateTab={(path) => onActivateTab(leaf.id, path)}
       onCloseTab={(path) => onCloseTab(leaf.id, path)}

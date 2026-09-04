@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:new-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:search', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent', 'menu:open-loose', 'menu:open-launch', 'menu:debug-start', 'menu:debug-stop', 'menu:debug-step-over', 'menu:debug-step-in', 'menu:debug-step-out'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:new-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:search', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent', 'menu:open-loose', 'menu:open-launch', 'menu:debug-start', 'menu:debug-stop', 'menu:debug-step-over', 'menu:debug-step-in', 'menu:debug-step-out', 'menu:run-file'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('editorApi', {
 
   // Python debugging (one session per window; paths confined in main)
   debug: {
-    start: (filePath, breakpoints) => ipcRenderer.invoke('debug:start', filePath, breakpoints),
+    start: (filePath, breakpoints, opts) => ipcRenderer.invoke('debug:start', filePath, breakpoints, opts ?? {}),
     setBreakpoints: (filePath, lines) => ipcRenderer.invoke('debug:setBreakpoints', filePath, lines),
     command: (command) => ipcRenderer.invoke('debug:command', command),
     stop: () => ipcRenderer.invoke('debug:stop'),
