@@ -63,6 +63,7 @@ class DebugSession extends EventEmitter {
     this.seq = 1
     this.pending = new Map() // seq -> { resolve, reject, timer, command }
     this.exited = false
+    this.seenEvents = new Set() // events observed so far, so waitForEvent can't miss a fast one
 
     sock.on('data', createDecoder((msg) => this.onMessage(msg)))
     sock.on('error', () => {}) // socket teardown races child exit; exit is the signal
@@ -86,6 +87,7 @@ class DebugSession extends EventEmitter {
       if (msg.success) entry.resolve(msg.body ?? {})
       else entry.reject(new Error(`DAP ${entry.command} failed: ${msg.message ?? 'unknown error'}`))
     } else if (msg.type === 'event') {
+      this.seenEvents.add(msg.event)
       this.emit('dap-event', msg)
     }
   }
@@ -108,8 +110,14 @@ class DebugSession extends EventEmitter {
     })
   }
 
-  waitForEvent(name, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+  // `orAlreadySeen` resolves immediately if the named event has ALREADY fired. Use it
+  // only for fire-once handshake events (e.g. `initialized`) where the payload doesn't
+  // matter — NOT for recurring events like `stopped`. Without it, a fast adapter (rdbg)
+  // can emit `initialized` in the microtask gap between the initialize response resolving
+  // and this waiter being attached, and the handshake would hang until timeout.
+  waitForEvent(name, { timeoutMs = REQUEST_TIMEOUT_MS, orAlreadySeen = false } = {}) {
     return new Promise((resolve, reject) => {
+      if (orAlreadySeen && this.seenEvents.has(name)) { resolve(null); return }
       const timer = setTimeout(() => {
         this.off('dap-event', handler)
         reject(new Error(`DAP: no ${name} event within ${timeoutMs}ms`))
@@ -194,8 +202,11 @@ async function launch({ debugBinary, runBinary, program, cwd, debugArgs, runArgs
   }
 
   const session = new DebugSession(child, sock)
+  // Start waiting for `initialized` BEFORE issuing initialize — a fast adapter (rdbg)
+  // emits it almost immediately after the response, and orAlreadySeen covers the case
+  // where it lands before this waiter attaches.
   const capabilities = await session.request('initialize', initializeArgs)
-  const initialized = session.waitForEvent('initialized')
+  const initialized = session.waitForEvent('initialized', { orAlreadySeen: true })
   void session.request('attach', attachArgs).catch(() => {}) // acked post-configurationDone
   await initialized
   return { session, capabilities }
