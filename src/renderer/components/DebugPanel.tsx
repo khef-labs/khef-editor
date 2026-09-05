@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'preact/hooks'
 import { ChevronRight, ChevronDown, Play } from 'lucide-preact'
 import type { DebugStackFrame, DebugScope, DebugVariable } from '../../../electron/types'
+import { childRequests, assembleChildren, type VarNode } from '../lib/debugVariables'
 
 export type DebugStatus = 'idle' | 'starting' | 'running' | 'stopped'
 
@@ -25,20 +26,33 @@ function frameLocation(f: DebugStackFrame): string {
   return name ? `${name}:${f.line}` : `line ${f.line}`
 }
 
-// Variables under one variablesReference, as a lazily-expanded tree. Each expandable
-// child fetches its own children on first expand (DAP's variablesReference chaining).
-function VariableList({ variablesReference, depth }: { variablesReference: number; depth: number }) {
+// Fetch a node's children by running its planned requests (see lib/debugVariables) and
+// assembling the results — named members then indexed elements for a collection, or a
+// single plain request for a leaf.
+async function fetchChildren(node: VarNode): Promise<DebugVariable[]> {
+  const results = await Promise.all(
+    childRequests(node).map((r) =>
+      window.editorApi.debug.variables(r.ref, r.filter ? { filter: r.filter, start: r.start, count: r.count } : undefined)
+        .then((res) => res.variables),
+    ),
+  )
+  return assembleChildren(node, results) as DebugVariable[]
+}
+
+// Variables under one variable node, as a lazily-expanded tree. Each expandable child
+// fetches its own children on first expand (DAP's variablesReference chaining).
+function VariableList({ parent, depth }: { parent: VarNode; depth: number }) {
   const [vars, setVars] = useState<DebugVariable[] | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     let alive = true
-    window.editorApi.debug.variables(variablesReference).then(
-      (r) => { if (alive) setVars(r.variables) },
+    fetchChildren(parent).then(
+      (list) => { if (alive) setVars(list) },
       () => { if (alive) setVars([]) },
     )
     return () => { alive = false }
-  }, [variablesReference])
+  }, [parent.variablesReference, parent.indexedVariables, parent.namedVariables])
 
   if (vars === null) return <div class="dbg-loading" style={{ paddingLeft: `${depth * 14 + 24}px` }}>…</div>
   return (
@@ -64,7 +78,7 @@ function VariableList({ variablesReference, depth }: { variablesReference: numbe
               <span class="dbg-var-name">{v.name}</span>
               <span class="dbg-var-value" title={v.value}>{v.value}</span>
             </div>
-            {isOpen && <VariableList variablesReference={v.variablesReference} depth={depth + 1} />}
+            {isOpen && <VariableList parent={v} depth={depth + 1} />}
           </div>
         )
       })}
@@ -138,7 +152,7 @@ export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart }: Debug
           {status === 'stopped' && scopes.map((scope) => (
             <div key={scope.variablesReference}>
               <div class="dbg-scope-label">{scope.name}</div>
-              {!scope.expensive && <VariableList variablesReference={scope.variablesReference} depth={0} />}
+              {!scope.expensive && <VariableList parent={{ variablesReference: scope.variablesReference }} depth={0} />}
             </div>
           ))}
         </div>

@@ -141,6 +141,11 @@ export interface DebugVariable {
   value: string
   type?: string
   variablesReference: number
+  // Collections (arrays/hashes) split their contents behind these counts: the client must
+  // request them with a paged variables() call ({ filter:'indexed'|'named', start, count }).
+  // rdbg returns array elements ONLY when 'indexed' is requested; a plain request omits them.
+  indexedVariables?: number
+  namedVariables?: number
 }
 
 export interface DebugApi {
@@ -150,7 +155,10 @@ export interface DebugApi {
   stop(): Promise<{ ok: boolean }>
   stackTrace(): Promise<{ stackFrames: DebugStackFrame[] }>
   scopes(frameId: number): Promise<{ scopes: DebugScope[] }>
-  variables(variablesReference: number): Promise<{ variables: DebugVariable[] }>
+  variables(
+    variablesReference: number,
+    opts?: { filter?: 'indexed' | 'named'; start?: number; count?: number },
+  ): Promise<{ variables: DebugVariable[] }>
   adapters(): Promise<DebugAdapterInfo[]>
   onEvent(handler: (event: DebugEvent) => void): () => void
 }

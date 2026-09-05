@@ -232,10 +232,11 @@ function registerDebugIpc() {
     if (!entry || entry.ended) return { scopes: [] }
     return entry.session.scopes(frameId)
   })
-  ipcMain.handle('debug:variables', async (event, variablesReference) => {
+  // `opts` = { filter?: 'indexed'|'named', start?, count? } for paged collection reads.
+  ipcMain.handle('debug:variables', async (event, variablesReference, opts) => {
     const entry = sessions.get(event.sender.id)
     if (!entry || entry.ended) return { variables: [] }
-    return entry.session.variables(variablesReference)
+    return entry.session.variables(variablesReference, opts || {})
   })
 
   // Which languages the debugger supports — the renderer gates F5/Run on this instead

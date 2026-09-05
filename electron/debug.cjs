@@ -146,7 +146,8 @@ class DebugSession extends EventEmitter {
   stepOut(threadId) { return this.request('stepOut', { threadId }) }
   stackTrace(threadId) { return this.request('stackTrace', { threadId }) }
   scopes(frameId) { return this.request('scopes', { frameId }) }
-  variables(variablesReference) { return this.request('variables', { variablesReference }) }
+  // `opts` may carry { filter:'indexed'|'named', start, count } for paged collection reads.
+  variables(variablesReference, opts = {}) { return this.request('variables', { variablesReference, ...opts }) }
 
   // End the session: try a graceful disconnect, then make sure the child is gone. Safe
   // to call twice. Never leaves an orphaned debuggee.
