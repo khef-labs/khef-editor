@@ -17,7 +17,7 @@ import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
-import { moveTab } from './lib/tabOrder'
+import { moveTab, nextTabIndex } from './lib/tabOrder'
 import type { TabDragSource } from './lib/tabDrag'
 import { installTooltips } from './lib/tooltip'
 import { isPreviewable } from './lib/preview'
@@ -846,6 +846,19 @@ export function App() {
     setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: path })))
   }, [])
 
+  // Cmd+Opt+Left/Right: move the active tab within the FOCUSED pane by `dir` (-1/+1),
+  // wrapping at the ends (VS Code cycles). No-op with 0/1 tabs.
+  const cycleFocusedTab = useCallback((dir: 1 | -1) => {
+    setTree((prev) => {
+      const leaf = findLeaf(prev, activeLeafIdRef.current)
+      if (!leaf) return prev
+      const idx = leaf.tabs.findIndex((t) => t.path === leaf.activePath)
+      const next = nextTabIndex(leaf.tabs.length, idx, dir)
+      if (next < 0) return prev
+      return updateLeaf(prev, leaf.id, (l) => ({ ...l, activePath: l.tabs[next].path }))
+    })
+  }, [])
+
   const changeContent = useCallback((_leafId: string, path: string, content: string) => {
     // Update the tab in EVERY leaf showing this file, not just the one being typed in —
     // split views of the same file must stay in sync (save and revert already map across
@@ -1221,6 +1234,13 @@ export function App() {
         if (root) setQuickOpen((v) => !v)
         return
       }
+      // Cmd+Opt+Left/Right — switch to the previous/next tab in the focused pane.
+      // Match on e.code (Option mangles e.key on macOS; code stays ArrowLeft/Right).
+      if (e.metaKey && e.altKey && !e.ctrlKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+        e.preventDefault()
+        cycleFocusedTab(e.code === 'ArrowRight' ? 1 : -1)
+        return
+      }
       // Ctrl+9 — reload the focused tab from disk (Emacs-friendly, like khef).
       if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '9' || e.code === 'Digit9')) {
         e.preventDefault()
@@ -1248,7 +1268,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [root, splitFocused, soloFocusedPane, closeFocusedPane, revertFocusedTab])
+  }, [root, splitFocused, soloFocusedPane, closeFocusedPane, revertFocusedTab, cycleFocusedTab])
 
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
