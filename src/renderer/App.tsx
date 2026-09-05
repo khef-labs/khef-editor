@@ -18,6 +18,7 @@ import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActi
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
 import { moveTab, nextTabIndex } from './lib/tabOrder'
+import { isPytestFile } from './lib/pytest'
 import type { TabDragSource } from './lib/tabDrag'
 import { installTooltips } from './lib/tooltip'
 import { isPreviewable } from './lib/preview'
@@ -808,6 +809,33 @@ export function App() {
     })
   }, [debugError, focusedDebuggableTab])
 
+  // pytest: F6 family. scope 'file' targets the focused pytest file (gated by name);
+  // scope 'all' passes no target so pytest collects from the workspace root. noDebug
+  // runs plainly (console foregrounds); debug honors gutter breakpoints in tests and
+  // code under test. Mirrors runPythonFile/startOrContinueDebug: idle-guard, console
+  // reset, and noDebugRunRef drives the console-vs-sidebar behavior on 'started'.
+  const startTests = useCallback((scope: 'file' | 'all', noDebug: boolean) => {
+    if (debugStatusRef.current !== 'idle') return
+    let target: string | null = null
+    if (scope === 'file') {
+      const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
+      const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
+      if (!tab || (tab.kind !== undefined && tab.kind !== 'editor') || tab.untitled || !isPytestFile(tab.path)) {
+        setError('Focus a pytest file (test_*.py or *_test.py) first')
+        return
+      }
+      target = tab.path
+    }
+    setDebugStatus('starting')
+    noDebugRunRef.current = noDebug
+    setConsoleChunks([])
+    const bps = noDebug ? [] : [...breakpointsRef.current.entries()].map(([path, lines]) => ({ path, lines }))
+    window.editorApi.debug.start(target, bps, { noDebug, mode: 'pytest' }).catch((e) => {
+      setDebugStatus('idle')
+      debugError(e)
+    })
+  }, [debugError])
+
   // Session events from main. On a stop, reveal the stopped file/line (opens the tab if
   // needed) — the highlight itself is driven by debugStopped through the pane tree.
   useEffect(() => {
@@ -1220,8 +1248,12 @@ export function App() {
     const offDbgIn = window.editorApi.onMenu('menu:debug-step-in', () => debugStep('stepIn'))
     const offDbgOut = window.editorApi.onMenu('menu:debug-step-out', () => debugStep('stepOut'))
     const offRunFile = window.editorApi.onMenu('menu:run-file', () => runPythonFile())
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile])
+    const offTestDbgFile = window.editorApi.onMenu('menu:test-debug-file', () => startTests('file', false))
+    const offTestRunFile = window.editorApi.onMenu('menu:test-run-file', () => startTests('file', true))
+    const offTestDbgAll = window.editorApi.onMenu('menu:test-debug-all', () => startTests('all', false))
+    const offTestRunAll = window.editorApi.onMenu('menu:test-run-all', () => startTests('all', true))
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile(); offTestDbgFile(); offTestRunFile(); offTestDbgAll(); offTestRunAll() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile, startTests])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)

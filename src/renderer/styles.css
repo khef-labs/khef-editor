@@ -742,7 +742,11 @@ html, body, #app {
 
 /* Debug Console tab */
 .console-pane {
-  height: 100%;
+  /* Fill .editor-body via inset:0 like its sibling panes (.cm-host-wrap, .diff-view).
+     `height:100%` does NOT resolve against the flex parent, so the pane grew to fit all
+     its text and the window clipped it with no scrollbar (long pytest output). */
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
   background: var(--bg);
   padding: 8px 12px;

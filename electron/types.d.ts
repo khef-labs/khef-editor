@@ -149,7 +149,13 @@ export interface DebugVariable {
 }
 
 export interface DebugApi {
-  start(filePath: string, breakpoints: FileBreakpoints[], opts?: { noDebug?: boolean }): Promise<{ ok: boolean; adapter: string; binary: string }>
+  // `filePath` may be null in pytest mode ('all tests' → pytest collects from the workspace
+  // root). `mode` defaults to 'file' (adapter chosen by extension); 'pytest' runs the suite.
+  start(
+    filePath: string | null,
+    breakpoints: FileBreakpoints[],
+    opts?: { noDebug?: boolean; mode?: 'file' | 'pytest' },
+  ): Promise<{ ok: boolean; adapter: string; binary: string }>
   setBreakpoints(filePath: string, lines: number[]): Promise<{ active: boolean }>
   command(command: DebugCommand): Promise<{ ok: boolean }>
   stop(): Promise<{ ok: boolean }>
@@ -215,7 +221,7 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file' | 'menu:test-run-file' | 'menu:test-debug-file' | 'menu:test-run-all' | 'menu:test-debug-all'
 
 // Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
 // the file was written outside the workspace root (subsequent saves go through the loose gate).

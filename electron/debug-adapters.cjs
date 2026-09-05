@@ -37,6 +37,26 @@ const ADAPTERS = {
     // `import debugpy` — a real probe that the debug adapter (not just the interpreter) exists.
     preflightArgs: ['-c', 'import debugpy'],
     installHint: (binary) => `debugpy is not installed for ${binary}. Install it with:\n  ${binary} -m pip install debugpy`,
+    // Alternate launch MODES that reuse this adapter's binary resolution, env, and DAP
+    // handshake but swap the arg builders. Selected by debug-ipc via debug:start({mode}).
+    // pytest: run/debug a test suite. `target` is a test file path or null (null = collect
+    // from cwd = workspace root). `-m pytest` (not the console script) puts cwd on sys.path
+    // so `from <pkg>…` imports resolve from inside tests/ even without a conftest. `-v` gives
+    // one PASSED/FAILED line per test (a usable console results view); `-s` disables pytest's
+    // stdout capture so print()s from tests stream live. debugpy binds test-file breakpoints
+    // with the adapter's default justMyCode:true (verified — test code is user code).
+    modes: {
+      pytest: {
+        debugArgs: (port, target) => [
+          '-Xfrozen_modules=off', '-m', 'debugpy', '--listen', `127.0.0.1:${port}`, '--wait-for-client',
+          '-m', 'pytest', '-v', '-s', ...(target ? [target] : []),
+        ],
+        runArgs: (target) => ['-m', 'pytest', '-v', '-s', ...(target ? [target] : [])],
+        // pytest must exist too; debug sessions additionally need the base `import debugpy`.
+        preflightArgs: ['-c', 'import pytest'],
+        installHint: (binary) => `pytest is not installed for ${binary}. Install it with:\n  ${binary} -m pip install pytest`,
+      },
+    },
   },
   ruby: {
     id: 'ruby',

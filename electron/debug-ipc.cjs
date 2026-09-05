@@ -76,11 +76,16 @@ async function resolveBinaries(adapter, root) {
   return { debugBinary: bin, runBinary: bin }
 }
 
-// Cheap toolchain probe (argv array, no shell) using the adapter's preflightArgs.
-function preflight(adapter, debugBinary, cwd) {
+// Cheap toolchain probe (argv array, no shell) with explicit args.
+function preflightWith(binary, args, cwd) {
   return new Promise((resolve) => {
-    execFile(debugBinary, adapter.preflightArgs, { cwd, timeout: 10000 }, (err) => resolve(!err))
+    execFile(binary, args, { cwd, timeout: 10000 }, (err) => resolve(!err))
   })
+}
+
+// Probe using the adapter's own preflightArgs (e.g. `import debugpy`).
+function preflight(adapter, debugBinary, cwd) {
+  return preflightWith(debugBinary, adapter.preflightArgs, cwd)
 }
 
 function sendEvent(event, payload) {
@@ -104,23 +109,46 @@ function registerDebugIpc() {
     if (!root) throw new Error('No workspace open')
     await killSession(wcId)
     const noDebug = !!(opts && opts.noDebug)
+    const mode = (opts && opts.mode) || 'file'
 
-    const adapter = adapterForFile(filePath)
-    if (!adapter) {
-      const exts = adapterList().flatMap((a) => a.extensions).join(', ')
-      throw new Error(`No debugger for this file type. Supported: ${exts}`)
+    // 'file' (default): adapter chosen by the focused file's extension. 'pytest': always the
+    // python adapter's pytest mode; the target is a test file OR null (null = collect from
+    // the workspace root). The pytest launch args/preflight come from adapter.modes.pytest.
+    let adapter, program, launchArgs, preflightArgs, installHint
+    if (mode === 'pytest') {
+      adapter = ADAPTERS.python
+      const m = adapter.modes.pytest
+      program = filePath ? await ws.resolveExisting(wcId, filePath) : null
+      launchArgs = { debugArgs: m.debugArgs, runArgs: m.runArgs }
+      preflightArgs = m.preflightArgs
+      installHint = m.installHint
+    } else {
+      adapter = adapterForFile(filePath)
+      if (!adapter) {
+        const exts = adapterList().flatMap((a) => a.extensions).join(', ')
+        throw new Error(`No debugger for this file type. Supported: ${exts}`)
+      }
+      program = await ws.resolveExisting(wcId, filePath)
+      launchArgs = { debugArgs: adapter.debugArgs, runArgs: adapter.runArgs }
+      preflightArgs = adapter.preflightArgs
+      installHint = adapter.installHint
     }
 
-    const program = await ws.resolveExisting(wcId, filePath)
     const { debugBinary, runBinary } = await resolveBinaries(adapter, root)
-    // A plain run (noDebug) needs no debug adapter — only debug sessions do.
+    // Preflight the tool that will actually run: for pytest, `import pytest` for BOTH run and
+    // debug (a debug session also needs debugpy, checked after). For a plain script run there
+    // is no tool to preflight.
+    if (mode === 'pytest' && !(await preflightWith(debugBinary, preflightArgs, root))) {
+      throw new Error(installHint(debugBinary))
+    }
     if (!noDebug && !(await preflight(adapter, debugBinary, root))) {
+      // adapter.preflight (import debugpy) — only debug sessions load the DAP adapter.
       throw new Error(adapter.installHint(debugBinary))
     }
 
     const { session } = await launch({
       debugBinary, runBinary, program, cwd: root, noDebug,
-      debugArgs: adapter.debugArgs, runArgs: adapter.runArgs, env: adapter.env,
+      debugArgs: launchArgs.debugArgs, runArgs: launchArgs.runArgs, env: adapter.env,
       initializeArgs: adapter.initializeArgs, attachArgs: adapter.attachArgs,
     })
     // Adapters that suspend at load (rdbg) surface a synthetic entry pause before the

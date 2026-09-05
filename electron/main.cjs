@@ -522,6 +522,28 @@ function buildMenu(recentFolders = [], recentFiles = []) {
           click: () => sendToFocused('menu:debug-stop'),
         },
         { type: 'separator' },
+        // pytest: F6 family (bare = debug, Ctrl = run without debugging, Shift = all tests).
+        {
+          label: 'Debug Tests in File',
+          accelerator: 'F6',
+          click: () => sendToFocused('menu:test-debug-file'),
+        },
+        {
+          label: 'Run Tests in File',
+          accelerator: 'Ctrl+F6',
+          click: () => sendToFocused('menu:test-run-file'),
+        },
+        {
+          label: 'Debug All Tests',
+          accelerator: 'Shift+F6',
+          click: () => sendToFocused('menu:test-debug-all'),
+        },
+        {
+          label: 'Run All Tests',
+          accelerator: 'Ctrl+Shift+F6',
+          click: () => sendToFocused('menu:test-run-all'),
+        },
+        { type: 'separator' },
         {
           label: 'Step Over',
           accelerator: 'F10',
