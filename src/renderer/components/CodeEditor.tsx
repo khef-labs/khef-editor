@@ -7,6 +7,7 @@ import {
   openSearchPanel, closeSearchPanel, selectNextOccurrence,
 } from '@codemirror/search'
 import { FindWidget } from './FindWidget'
+import { ContextMenu, type MenuEntry } from './ContextMenu'
 import { computeMatchState, type MatchRange } from '../lib/findMatches'
 import {
   defaultKeymap, history, historyKeymap, indentWithTab, undo, redo,
@@ -324,6 +325,9 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     setMatchState(state)
   }, [findQuery, findCase, findWord, findRegex])
 
+  // Right-click editor context menu (Cut/Copy/Paste/Select All). Position from the event.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
+
   // Bumped every time Find is (re)opened so the widget re-focuses + re-selects its input
   // even when it was already open (Cmd+F on a new selection while the widget is showing).
   const [findFocusToken, setFindFocusToken] = useState(0)
@@ -363,6 +367,45 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     scopeRef.current = null
     setFindInSelection(false)
     if (view) { closeSearchPanel(view); view.focus() }
+  }, [])
+
+  // --- Editor context menu commands (clipboard via navigator.clipboard, allowed in the
+  // sandboxed renderer; the editor already uses writeText for the Emacs kill ring). ---
+  const menuCopy = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    const { from, to } = view.state.selection.main
+    if (from === to) return
+    void navigator.clipboard.writeText(view.state.sliceDoc(from, to)).catch(() => {})
+    view.focus()
+  }, [])
+
+  const menuCut = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    const { from, to } = view.state.selection.main
+    if (from === to) return
+    void navigator.clipboard.writeText(view.state.sliceDoc(from, to)).catch(() => {})
+    view.dispatch({ changes: { from, to }, selection: EditorSelection.cursor(from), userEvent: 'delete.cut' })
+    view.focus()
+  }, [])
+
+  const menuPaste = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    void navigator.clipboard.readText().then((text) => {
+      if (!text) return
+      const { from, to } = view.state.selection.main
+      view.dispatch({ changes: { from, to, insert: text }, selection: EditorSelection.cursor(from + text.length), userEvent: 'input.paste' })
+      view.focus()
+    }).catch(() => {})
+  }, [])
+
+  const menuSelectAll = useCallback(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ selection: EditorSelection.range(0, view.state.doc.length) })
+    view.focus()
   }, [])
 
   // Re-apply the query whenever it or the flags change while the widget is open.
@@ -808,7 +851,25 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
           onReplaceKeyDown={onReplaceKeyDown}
         />
       )}
-      <div class="cm-host" ref={hostRef} />
+      <div
+        class="cm-host"
+        ref={hostRef}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          const view = viewRef.current
+          setCtxMenu({ x: e.clientX, y: e.clientY, hasSelection: !!view && !view.state.selection.main.empty })
+        }}
+      />
+      {ctxMenu && (() => {
+        const entries: MenuEntry[] = [
+          { kind: 'item', label: 'Cut', hint: '⌘X', disabled: !ctxMenu.hasSelection, onClick: menuCut },
+          { kind: 'item', label: 'Copy', hint: '⌘C', disabled: !ctxMenu.hasSelection, onClick: menuCopy },
+          { kind: 'item', label: 'Paste', hint: '⌘V', onClick: menuPaste },
+          { kind: 'separator' },
+          { kind: 'item', label: 'Select All', hint: '⌘A', onClick: menuSelectAll },
+        ]
+        return <ContextMenu x={ctxMenu.x} y={ctxMenu.y} entries={entries} onClose={() => setCtxMenu(null)} />
+      })()}
     </div>
   )
 }
