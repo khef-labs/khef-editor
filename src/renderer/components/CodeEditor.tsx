@@ -679,6 +679,13 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
           '.cm-scroller': {
             fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",
             overflow: 'auto',
+            // Pin an INTEGER line height so the gutter's line-number blocks and the content
+            // lines round to the same pixel height. With a fractional line height (CM's
+            // font-derived default), the gutter rounds per-element and drifts a fraction of a
+            // pixel per line; over a long file the accumulated error slides a gutter digit
+            // onto the wrong content row (a stray line-number bled into the text). See the
+            // font-load re-measure below for the other half of this fix.
+            lineHeight: '19px',
           },
           // Keep the selection visible when the editor is BLURRED (e.g. focus is in the Find
           // widget). drawSelection() hides .cm-selectionBackground on blur by default; force
@@ -724,6 +731,16 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     activeEditorView = view
     if (languageForFilename(filename).length === 0) applyAsyncLanguage(view, filename)
     view.focus() // focus a newly-mounted editor so the user can type immediately
+    // The editor is often built before the monospace font (SF Mono) has finished loading,
+    // so CM measures line/gutter geometry against a fallback font and never re-measures when
+    // the real font swaps in — freezing a gutter/content vertical drift until the next mount
+    // (reopening the file "fixed" it because that re-measured). Force a re-measure once fonts
+    // are ready. Guard the view still being alive (the effect can unmount before this settles).
+    if (document.fonts?.ready) {
+      void document.fonts.ready.then(() => {
+        if (viewRef.current === view) view.requestMeasure()
+      })
+    }
     return () => {
       if (activeEditorView === view) {
         activeEditorView = null
