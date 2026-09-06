@@ -763,6 +763,30 @@ html, body, #app {
 .console-stderr { color: #f48771; }
 .console-status { color: var(--fg-dim); font-style: italic; }
 
+/* Test Results (pytest) section in the Run and Debug panel */
+.dbg-test-counts { margin-left: auto; margin-right: 10px; display: flex; gap: 8px; font-size: 11px; }
+.dbg-test-pass { color: #6cbe6c; }
+.dbg-test-fail { color: #f14c4c; }
+.dbg-test-skip { color: var(--fg-dim); }
+.dbg-tests { font-size: 12px; }
+.dbg-test-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dbg-test-row:hover { background: var(--row-hover); }
+.dbg-test-glyph { flex: none; width: 12px; text-align: center; }
+.dbg-test-passed .dbg-test-glyph { color: #6cbe6c; }
+.dbg-test-failed .dbg-test-glyph, .dbg-test-error .dbg-test-glyph { color: #f14c4c; }
+.dbg-test-skipped .dbg-test-glyph { color: var(--fg-dim); }
+.dbg-test-skipped .dbg-test-name { color: var(--fg-dim); }
+.dbg-test-name { flex: none; }
+.dbg-test-reason { color: var(--fg-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+
 /* Run and Debug sidebar panel */
 .dbg-panel {
   display: flex;

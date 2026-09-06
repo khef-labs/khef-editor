@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'preact/hooks'
 import { ChevronRight, ChevronDown, Play } from 'lucide-preact'
 import type { DebugStackFrame, DebugScope, DebugVariable } from '../../../electron/types'
 import { childRequests, assembleChildren, type VarNode } from '../lib/debugVariables'
+import type { TestRunSummary, TestResult } from '../lib/pytestResults'
 
 export type DebugStatus = 'idle' | 'starting' | 'running' | 'stopped'
 
@@ -12,6 +13,10 @@ interface DebugPanelProps {
   stoppedToken: number
   onOpenFrame: (path: string, line: number) => void
   onStart: () => void
+  // Parsed pytest results for the current run, or null when the run isn't a test run.
+  // When present, a Test Results section renders above Variables/Call Stack.
+  testRun: TestRunSummary | null
+  onOpenTestLocation: (file: string, line?: number) => void
 }
 
 const statusLabel: Record<DebugStatus, string> = {
@@ -86,7 +91,54 @@ function VariableList({ parent, depth }: { parent: VarNode; depth: number }) {
   )
 }
 
-export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart }: DebugPanelProps) {
+const outcomeGlyph: Record<TestResult['outcome'], string> = { passed: '✓', failed: '✕', error: '✕', skipped: '○' }
+
+// Test Results: per-test pass/fail rows (failures first) with a counts header. Clicking a
+// row opens the failure location (or the test file for a pass). Driven entirely by the
+// parsed console output, so it fills in live as tests report.
+function TestResults({ run, onOpen }: { run: TestRunSummary; onOpen: (file: string, line?: number) => void }) {
+  const [open, setOpen] = useState(true)
+  if (run.results.length === 0) return null
+  // Failures first (what you want to see), then the rest in run order.
+  const ordered = [...run.results].sort((a, b) => {
+    const bad = (r: TestResult) => (r.outcome === 'failed' || r.outcome === 'error' ? 0 : 1)
+    return bad(a) - bad(b)
+  })
+  return (
+    <>
+      <button class="scm-section-header" onClick={() => setOpen((v) => !v)}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>Test Results</span>
+        <span class="dbg-test-counts">
+          <span class="dbg-test-pass">{run.passed}✓</span>
+          {(run.failed + run.errored) > 0 && <span class="dbg-test-fail">{run.failed + run.errored}✕</span>}
+          {run.skipped > 0 && <span class="dbg-test-skip">{run.skipped}○</span>}
+        </span>
+      </button>
+      {open && (
+        <div class="dbg-tests">
+          {ordered.map((t) => {
+            const bad = t.outcome === 'failed' || t.outcome === 'error'
+            return (
+              <div
+                key={t.nodeid}
+                class={`dbg-test-row dbg-test-${t.outcome}`}
+                title={t.reason ? `${t.nodeid}\n${t.reason}` : t.nodeid}
+                onClick={() => onOpen(bad && t.failFile ? t.failFile : t.file, bad ? t.failLine : undefined)}
+              >
+                <span class="dbg-test-glyph">{outcomeGlyph[t.outcome]}</span>
+                <span class="dbg-test-name">{t.name}</span>
+                {bad && t.reason && <span class="dbg-test-reason">{t.reason}</span>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart, testRun, onOpenTestLocation }: DebugPanelProps) {
   const [frames, setFrames] = useState<DebugStackFrame[]>([])
   const [selectedFrame, setSelectedFrame] = useState(0)
   const [scopes, setScopes] = useState<DebugScope[]>([])
@@ -122,14 +174,20 @@ export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart }: Debug
     if (f?.source?.path) onOpenFrame(f.source.path, f.line)
   }, [frames, onOpenFrame])
 
+  // A finished test run lands the session in 'idle' but its results should persist.
+  const hasResults = !!testRun && testRun.results.length > 0
+
   if (status === 'idle') {
     return (
       <div class="dbg-panel" data-testid="debug-panel">
         <div class="sidebar-header">Run and Debug</div>
-        <div class="dbg-idle">
-          <button class="dbg-start-btn" onClick={onStart}><Play size={14} /> Start Debugging</button>
-          <p class="hint">F5 runs the focused file under the debugger (Python and Ruby supported). Click in the gutter to set breakpoints.</p>
-        </div>
+        {hasResults && testRun && <TestResults run={testRun} onOpen={onOpenTestLocation} />}
+        {!hasResults && (
+          <div class="dbg-idle">
+            <button class="dbg-start-btn" onClick={onStart}><Play size={14} /> Start Debugging</button>
+            <p class="hint">F5 runs the focused file under the debugger (Python and Ruby supported). Click in the gutter to set breakpoints.</p>
+          </div>
+        )}
       </div>
     )
   }
@@ -140,6 +198,8 @@ export function DebugPanel({ status, stoppedToken, onOpenFrame, onStart }: Debug
         <span class="sidebar-header">Run and Debug</span>
         <span class={`dbg-status dbg-status-${status}`}>{statusLabel[status]}</span>
       </div>
+
+      {hasResults && testRun && <TestResults run={testRun} onOpen={onOpenTestLocation} />}
 
       {/* VARIABLES */}
       <button class="scm-section-header" onClick={() => setScopesOpen((v) => !v)}>

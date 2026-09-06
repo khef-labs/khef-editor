@@ -60,6 +60,10 @@ async function resolveBinaries(adapter, root) {
       const venv = path.join(root, '.venv', 'bin', 'python')
       bin = fs.existsSync(venv) ? venv : (await shellWhich('python3')) || 'python3'
     }
+    // A pyenv/asdf SHIM re-execs pyenv on every launch (~3s each under the GUI app vs
+    // ~0.08s for the real binary), and we spawn python several times per run — so a shim
+    // makes a test run take 10-20s. Dereference to the real interpreter once (cached).
+    bin = await realPython(bin)
     return { debugBinary: bin, runBinary: bin } // debugpy is `python -m debugpy`
   }
 
@@ -74,6 +78,21 @@ async function resolveBinaries(adapter, root) {
 
   const bin = override || adapter.id
   return { debugBinary: bin, runBinary: bin }
+}
+
+// Resolve a python binary to its real `sys.executable`, dereferencing pyenv/asdf shims
+// (which cost ~3s per spawn). Cached per resolved path. Falls back to the input on any
+// failure, so a non-python or missing binary still flows to preflight for a clean error.
+const realPythonCache = new Map()
+function realPython(bin) {
+  if (realPythonCache.has(bin)) return Promise.resolve(realPythonCache.get(bin))
+  return new Promise((resolve) => {
+    execFile(bin, ['-c', 'import sys; print(sys.executable)'], { timeout: 10000 }, (err, stdout) => {
+      const real = (!err && (stdout || '').trim()) || bin
+      realPythonCache.set(bin, real)
+      resolve(real)
+    })
+  })
 }
 
 // Cheap toolchain probe (argv array, no shell) with explicit args.
@@ -164,9 +183,12 @@ function registerDebugIpc() {
       sendEvent(event, { kind: 'ended', code: code ?? null })
     }
 
-    session.on('stdout', (text) => sendEvent(event, { kind: 'output', channel: 'stdout', text }))
-    session.on('stderr', (text) => sendEvent(event, { kind: 'output', channel: 'stderr', text }))
-    session.on('exit', ({ code }) => end(code))
+    // onOutput/onExit replay anything the child emitted before we attached (a fast pytest
+    // run can finish in the gap after launch() returns — see DebugSession).
+    // onOutput/onExit replay anything the child emitted before we attached (a fast pytest
+    // run can finish in the gap after launch() returns — see DebugSession).
+    session.onOutput((channel, text) => sendEvent(event, { kind: 'output', channel, text }))
+    session.onExit(({ code }) => end(code))
     session.on('dap-event', (msg) => {
       if (msg.event === 'stopped') {
         const threadId = msg.body?.threadId

@@ -63,19 +63,46 @@ class DebugSession extends EventEmitter {
     this.seq = 1
     this.pending = new Map() // seq -> { resolve, reject, timer, command }
     this.exited = false
+    this.exitCode = null
     this.seenEvents = new Set() // events observed so far, so waitForEvent can't miss a fast one
+    // A fast child (e.g. a tiny pytest run) can emit stdout AND exit in the microtask gap
+    // between launch() returning and the IPC layer attaching its listeners, and a plain
+    // EventEmitter drops events with no listener. Buffer output and latch exit here from
+    // construction; onOutput()/onExit() below replay whatever already happened.
+    this.outputBuffer = [] // [{ channel: 'stdout'|'stderr', text }]
 
     sock.on('data', createDecoder((msg) => this.onMessage(msg)))
     sock.on('error', () => {}) // socket teardown races child exit; exit is the signal
     sock.on('close', () => this.failAllPending(new Error('debug session closed')))
 
-    child.stdout.on('data', (d) => this.emit('stdout', d.toString('utf8')))
-    child.stderr.on('data', (d) => this.emit('stderr', d.toString('utf8')))
+    child.stdout.on('data', (d) => this.pushOutput('stdout', d.toString('utf8')))
+    child.stderr.on('data', (d) => this.pushOutput('stderr', d.toString('utf8')))
     child.on('exit', (code) => {
       this.exited = true
+      this.exitCode = code
       this.failAllPending(new Error('debuggee exited'))
       this.emit('exit', { code })
     })
+  }
+
+  pushOutput(channel, text) {
+    if (this.outputConsumer) this.outputConsumer(channel, text)
+    else this.outputBuffer.push({ channel, text })
+  }
+
+  // Subscribe to program output. Replays anything buffered before this call (see the
+  // race note in the constructor), then streams the rest. One consumer (the IPC layer).
+  onOutput(fn) {
+    this.outputConsumer = fn
+    const buffered = this.outputBuffer
+    this.outputBuffer = []
+    for (const { channel, text } of buffered) fn(channel, text)
+  }
+
+  // Subscribe to exit. Fires immediately if the child has already exited.
+  onExit(fn) {
+    if (this.exited) { fn({ code: this.exitCode }); return }
+    this.once('exit', fn)
   }
 
   onMessage(msg) {

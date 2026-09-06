@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'preact/hooks'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'preact/hooks'
 import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus, Play, Square, RedoDot, ArrowDownToDot, ArrowUpFromDot, BugPlay } from 'lucide-preact'
 import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
 import { FileTree, NewEntryRow } from './components/FileTree'
@@ -19,6 +19,7 @@ import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
 import { moveTab, nextTabIndex } from './lib/tabOrder'
 import { isPytestFile } from './lib/pytest'
+import { parsePytestOutput } from './lib/pytestResults'
 import type { TabDragSource } from './lib/tabDrag'
 import { installTooltips } from './lib/tooltip'
 import { isPreviewable } from './lib/preview'
@@ -685,6 +686,13 @@ export function App() {
   // stderr keeps its channel for coloring). Capped so a chatty program can't grow
   // memory without bound. One console tab per window, identified by CONSOLE_PATH.
   const [consoleChunks, setConsoleChunks] = useState<ConsoleChunk[]>([])
+  // True while the current/last session was a pytest run, so the Test Results panel shows
+  // only for test runs (not plain script debugging). Set in startTests, cleared elsewhere.
+  const [isPytestRun, setIsPytestRun] = useState(false)
+  // Imperative mirror, set synchronously in startTests. The 'started' event can arrive
+  // before the setIsPytestRun re-render commits, so the event handler must read the ref,
+  // not the state (same reason noDebugRunRef is a ref).
+  const isPytestRunRef = useRef(false)
   const appendConsole = useCallback((chunk: ConsoleChunk) => {
     setConsoleChunks((prev) => {
       const next = prev.length >= 5000 ? [...prev.slice(-4000), chunk] : [...prev, chunk]
@@ -786,6 +794,7 @@ export function App() {
     if (!tab) return
     setDebugStatus('starting')
     noDebugRunRef.current = false
+    isPytestRunRef.current = false; setIsPytestRun(false)
     setConsoleChunks([])
     const bps = [...breakpointsRef.current.entries()].map(([path, lines]) => ({ path, lines }))
     window.editorApi.debug.start(tab.path, bps).catch((e) => {
@@ -802,6 +811,7 @@ export function App() {
     if (!tab) return
     setDebugStatus('starting')
     noDebugRunRef.current = true
+    isPytestRunRef.current = false; setIsPytestRun(false)
     setConsoleChunks([])
     window.editorApi.debug.start(tab.path, [], { noDebug: true }).catch((e) => {
       setDebugStatus('idle')
@@ -828,6 +838,8 @@ export function App() {
     }
     setDebugStatus('starting')
     noDebugRunRef.current = noDebug
+    isPytestRunRef.current = true
+    setIsPytestRun(true)
     setConsoleChunks([])
     const bps = noDebug ? [] : [...breakpointsRef.current.entries()].map(([path, lines]) => ({ path, lines }))
     window.editorApi.debug.start(target, bps, { noDebug, mode: 'pytest' }).catch((e) => {
@@ -843,10 +855,12 @@ export function App() {
       if (ev.kind === 'started') {
         setDebugStatus('running')
         setDebugStopped(null)
-        // A plain run foregrounds the console (the output IS the result); a debug
-        // session adds it in the background and brings up the Run and Debug view.
+        // A plain run foregrounds the console (the output IS the result); a debug session
+        // adds it in the background. Either way, a pytest run also opens the Run and Debug
+        // view so its Test Results panel is visible — otherwise a Run leaves the results
+        // hidden behind the console and looks like nothing happened.
         openConsoleTab(noDebugRunRef.current)
-        if (!noDebugRunRef.current) {
+        if (!noDebugRunRef.current || isPytestRunRef.current) {
           setSidebarView('debug')
           setSidebarCollapsed(false)
         }
@@ -1302,6 +1316,23 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [root, splitFocused, soloFocusedPane, closeFocusedPane, revertFocusedTab, cycleFocusedTab])
 
+  // Parse the console text into a pytest results tree (only meaningful for test runs;
+  // gated by isPytestRun at the DebugPanel prop). Recomputed as chunks stream in.
+  const testRun = useMemo(() => {
+    const text = consoleChunks.map((c) => c.text).join('')
+    return parsePytestOutput(text)
+  }, [consoleChunks])
+
+  // Click a test result → open its file at the failure line (failures) or the test file
+  // (passes). pytest prints workspace-relative paths, so resolve against the root.
+  const openTestLocation = useCallback((relFile: string, line?: number) => {
+    const rootPath = rootRef.current
+    const abs = relFile.startsWith('/') ? relFile : (rootPath ? `${rootPath}/${relFile}` : relFile)
+    const name = abs.split('/').pop() ?? abs
+    if (typeof line === 'number') openMatch(abs, name, line)
+    else void openPath(abs, name)
+  }, [openMatch, openPath])
+
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
@@ -1448,6 +1479,8 @@ export function App() {
             stoppedToken={debugStoppedToken}
             onOpenFrame={(p, line) => openMatch(p, p.split('/').pop() ?? p, line)}
             onStart={startOrContinueDebug}
+            testRun={isPytestRun ? testRun : null}
+            onOpenTestLocation={openTestLocation}
           />
         </div>
       </aside>
