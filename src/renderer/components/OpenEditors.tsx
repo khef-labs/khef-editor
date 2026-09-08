@@ -32,7 +32,8 @@ export function OpenEditors({ leaves, activeLeafId, onActivate, onClose }: OpenE
           {leaf.tabs.map((tab) => {
             const dirty = tab.content !== tab.savedContent
             const isActive = leaf.id === activeLeafId && leaf.activePath === tab.path
-            const dir = tab.path.slice(0, tab.path.length - tab.name.length - 1)
+            // Synthetic tabs have no directory: a review shows its commit subject, the console nothing.
+            const dir = tab.kind === 'review' ? (tab.review?.title ?? '') : tab.kind === 'console' ? '' : tab.path.slice(0, tab.path.length - tab.name.length - 1)
             return (
               <div
                 key={tab.path}

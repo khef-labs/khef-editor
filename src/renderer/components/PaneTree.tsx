@@ -11,6 +11,8 @@ interface PaneTreeProps {
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
   breakpoints: Map<string, number[]>
+  // Git blame runs per absolute file path (only files with blame enabled + loaded).
+  blames: Map<string, import('../../../electron/types').GitBlameRun[]>
   onToggleBreakpoint: (path: string, line: number) => void
   debugStopped: { path: string; line: number } | null
   debugConsole: ConsoleChunk[]
@@ -30,6 +32,10 @@ interface PaneTreeProps {
   onResize: (splitId: string, sizes: number[]) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
+  // Open a repo-relative file as an editor tab (review pages' "open file").
+  onOpenRepoFile?: (relPath: string) => void
+  onOpenDiff?: (spec: import('./DiffView').DiffSpec, title: string) => void
+  onOpenReview?: (commit: import('../../../electron/types').GitCommit) => void
   onOpenSettings?: () => void
   recentFolders?: string[]
   onOpenRecent?: (dir: string) => void
@@ -132,7 +138,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, debugConsole, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, blames, onToggleBreakpoint, debugStopped, debugConsole, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -142,6 +148,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBrea
       themeId={themeId}
       gotoLine={gotoLine}
       breakpoints={breakpoints}
+      blames={blames}
       onToggleBreakpoint={onToggleBreakpoint}
       debugStopped={debugStopped}
       debugConsole={debugConsole}
@@ -158,6 +165,9 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, onToggleBrea
       onSave={(path, content) => onSave(leaf.id, path, content)}
       onOpenFolder={onOpenFolder}
       onOpenFile={onOpenFile}
+      onOpenRepoFile={onOpenRepoFile}
+      onOpenDiff={onOpenDiff}
+      onOpenReview={onOpenReview}
       onOpenSettings={onOpenSettings}
       recentFolders={recentFolders}
       onOpenRecent={onOpenRecent}

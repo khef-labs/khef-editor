@@ -98,6 +98,12 @@ export interface AppSettings {
   pythonPath?: string
   // Ruby debugger (rdbg) override; empty/absent = auto (login-shell lookup, else rdbg).
   rdbgPath?: string
+  // Branch-review base ref per repository root (Source Control → Branch mode).
+  reviewBase?: Record<string, string>
+  // View → Toggle Blame: show git blame in the editor gutter.
+  blameEnabled?: boolean
+  // Local review notes per repository root (see src/renderer/lib/reviewNotes.ts).
+  reviewNotes?: Record<string, ReviewNote[]>
 }
 
 // --- Python debugging (DAP via debugpy; one session per window) ---
@@ -176,8 +182,13 @@ export interface GitInfo {
 
 export interface GitChange {
   path: string
-  status: string // M | A | D | R | U
+  oldPath?: string
+  status: string // M | A | D | R | U — worktree state, else index state (legacy summary)
   raw?: string
+  // Porcelain columns: X (index / staged) and Y (worktree / unstaged). null = unchanged
+  // there. Untracked files have worktreeStatus 'U' and no indexStatus.
+  indexStatus?: string | null
+  worktreeStatus?: string | null
 }
 
 export interface GitStatusResult {
@@ -188,8 +199,11 @@ export interface GitCommit {
   hash: string
   short: string
   author: string
-  date: string
+  date: string // ISO 8601 author date
   subject: string
+  files: number
+  added: number
+  deleted: number
 }
 
 export interface GitLogResult {
@@ -206,6 +220,72 @@ export interface GitCommitFilesResult {
   files: GitCommitFile[]
 }
 
+// One file in a commit (or branch) review: status letter plus line counts from --numstat.
+export interface GitReviewFile {
+  path: string
+  oldPath?: string
+  status: string // M | A | D | R | C | T
+  added: number
+  deleted: number
+  binary: boolean
+}
+
+export interface GitCommitDetail {
+  hash: string
+  short: string
+  author: string
+  date: string // ISO 8601 author date
+  subject: string
+  body: string
+  files: GitReviewFile[]
+  added: number
+  deleted: number
+}
+
+export interface GitBranch {
+  name: string
+  short: string
+  date: string
+}
+
+export interface GitBranchesResult {
+  branches: GitBranch[]
+  current: string | null
+}
+
+// Branch review: HEAD against `base` (three-dot semantics — since the merge-base).
+export interface GitRangeDetail {
+  base: string
+  mergeBase: string
+  commits: number
+  files: GitReviewFile[]
+  added: number
+  deleted: number
+}
+
+// One run of consecutive lines attributed to the same commit by `git blame`.
+export interface GitBlameRun {
+  line: number   // 1-based first line of the run in the working-tree file
+  count: number
+  hash: string   // all zeros for uncommitted lines
+  short: string
+  author: string
+  time: number   // author epoch seconds (0 if unknown)
+  summary: string
+}
+
+// A review note pinned to a diff line. Kept in settings, never in the repo.
+export interface ReviewNote {
+  id: string
+  ref: string
+  file: string
+  side: 'old' | 'new'
+  line: number
+  text: string
+  createdAt: string
+  updatedAt?: string
+}
+
 export interface GitFileDiff {
   oldText: string
   newText: string
@@ -218,10 +298,17 @@ export interface GitApi {
   status(): Promise<GitStatusResult>
   log(skip?: number, limit?: number): Promise<GitLogResult>
   commitFiles(hash: string): Promise<GitCommitFilesResult>
-  fileDiff(args: { mode: 'working' | 'commit'; file: string; hash?: string }): Promise<GitFileDiff>
+  commitDetail(hash: string): Promise<GitCommitDetail>
+  branches(): Promise<GitBranchesResult>
+  rangeLog(base: string, skip?: number, limit?: number): Promise<GitLogResult>
+  rangeDetail(base: string): Promise<GitRangeDetail>
+  fileHistory(file: string, skip?: number, limit?: number): Promise<GitLogResult>
+  blame(file: string): Promise<{ runs: GitBlameRun[] }>
+  // mode 'range': `hash` is the merge-base commit (old side), new side is HEAD.
+  fileDiff(args: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file' | 'menu:test-run-file' | 'menu:test-debug-file' | 'menu:test-run-all' | 'menu:test-debug-all'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file' | 'menu:test-run-file' | 'menu:test-debug-file' | 'menu:test-run-all' | 'menu:test-debug-all' | 'menu:toggle-blame'
 
 // Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
 // the file was written outside the workspace root (subsequent saves go through the loose gate).

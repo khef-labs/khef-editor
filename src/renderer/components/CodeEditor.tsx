@@ -22,6 +22,8 @@ import { highlightSelectionMatches } from '@codemirror/search'
 import { bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { languageForFilename, loadLanguageForFilename } from '../lib/language'
 import { breakpointGutter, stoppedLineField, setBreakpointsEffect, setStoppedLineEffect } from '../lib/debugGutter'
+import { blameGutter, setBlameEffect } from '../lib/blameGutter'
+import type { GitBlameRun } from '../../../electron/types'
 import { editorThemeExtension } from '../lib/editorTheme'
 import type { EditorThemeKey } from '../lib/themes'
 
@@ -100,6 +102,8 @@ interface CodeEditorProps {
   breakpoints?: number[]
   onToggleBreakpoint?: (line: number) => void
   stoppedLine?: number | null
+  // Git blame runs for this file, or null/undefined when blame is off (gutter hidden).
+  blame?: GitBlameRun[] | null
   // Fired only for USER-originated edits (typing, kill/yank, etc.) — NOT for programmatic
   // doc replacement (path swap, value sync). Used to promote a preview (ephemeral) tab to a
   // permanent one, since editing a soft-opened file commits it (VS Code behavior).
@@ -216,7 +220,8 @@ function extendSelection(view: EditorView, move: (range: SelectionRange) => Sele
   return true
 }
 
-export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine, blame }: CodeEditorProps) {
+  const blameComp = useRef(new Compartment())
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const languageComp = useRef(new Compartment())
@@ -593,6 +598,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
         emacsDomHandlers(),
         breakpointGutter((line) => onToggleBreakpointRef.current?.(line)),
         stoppedLineField,
+        blameComp.current.of([]),
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
@@ -822,6 +828,16 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     viewRef.current?.dispatch({ effects: setStoppedLineEffect.of(stoppedLine ?? null) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, stoppedLine])
+
+  // Blame gutter: mounted only while runs are supplied (so the column takes no space when
+  // blame is off), then fed the runs.
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: blameComp.current.reconfigure(blame ? blameGutter() : []) })
+    if (blame) view.dispatch({ effects: setBlameEffect.of(blame) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, blame])
 
   // Jump to a line (1-based) when a search result is clicked. The token lets the same
   // line re-trigger a jump.

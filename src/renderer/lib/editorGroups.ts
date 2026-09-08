@@ -8,9 +8,13 @@ export interface OpenTab {
   content: string
   savedContent: string
   loose?: boolean
-  kind?: 'editor' | 'preview' | 'diff' | 'console'
+  kind?: 'editor' | 'preview' | 'diff' | 'console' | 'review' | 'history'
   sourcePath?: string
-  diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
+  diff?: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }
+  // For review tabs: which commit (or, later, branch range) the page shows.
+  review?: { kind: 'commit'; hash: string; title: string } | { kind: 'range'; base: string; title: string }
+  // For file-history tabs: the repo-relative file.
+  history?: { file: string }
   // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Only set
   // on plain editor tabs (never kind:'preview'/'diff').
   ephemeral?: boolean
@@ -27,8 +31,10 @@ export interface EditorGroup {
 // Hover tooltip for a tab: the real file path, not the synthetic tab id. Preview tabs
 // point at their source file, diff tabs at the repo-relative file under diff, untitled
 // buffers have no path so the buffer name stands in.
-export function tabHoverPath(tab: Pick<OpenTab, 'path' | 'name' | 'sourcePath' | 'diff' | 'untitled' | 'kind'>): string {
+export function tabHoverPath(tab: Pick<OpenTab, 'path' | 'name' | 'sourcePath' | 'diff' | 'review' | 'history' | 'untitled' | 'kind'>): string {
   if (tab.untitled || tab.kind === 'console') return tab.name
+  if (tab.review) return tab.review.title
+  if (tab.history) return tab.history.file
   if (tab.sourcePath) return tab.sourcePath
   if (tab.diff) return tab.diff.file
   return tab.path

@@ -15,10 +15,14 @@ export interface OpenTab {
   // Markdown/Mermaid; 'diff' shows a read-only side-by-side git diff; 'console' is the
   // Debug Console (program output; content lives in App state, not the tab). Synthetic
   // kinds use a synthetic path so they're distinct from editor tabs.
-  kind?: 'editor' | 'preview' | 'diff' | 'console'
+  kind?: 'editor' | 'preview' | 'diff' | 'console' | 'review' | 'history'
   sourcePath?: string
   // For diff tabs: the diff spec (mode/file/hash).
-  diff?: { mode: 'working' | 'commit'; file: string; hash?: string }
+  diff?: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }
+  // For review tabs: which commit (or, later, branch range) the page shows.
+  review?: { kind: 'commit'; hash: string; title: string } | { kind: 'range'; base: string; title: string }
+  // For file-history tabs: the repo-relative file.
+  history?: { file: string }
   // VS Code "preview tab" soft-open: an ephemeral editor tab opened by a single-click in
   // the Explorer. The next single-click REPLACES it (at most one per pane) instead of
   // adding a tab. Cleared (promoted to a permanent tab) by double-clicking the file/tab or

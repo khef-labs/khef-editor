@@ -2,6 +2,10 @@ import { TabBar } from './TabBar'
 import { CodeEditor } from './CodeEditor'
 import { PreviewPane } from './PreviewPane'
 import { DiffView } from './DiffView'
+import { CommitReviewView } from './CommitReviewView'
+import { FileHistoryView } from './FileHistoryView'
+import type { DiffSpec } from './DiffView'
+import type { GitBlameRun, GitCommit } from '../../../electron/types'
 import { ConsolePane, type ConsoleChunk } from './ConsolePane'
 import type { EditorGroup } from '../lib/editorGroups'
 import type { TabDragSource } from '../lib/tabDrag'
@@ -31,6 +35,10 @@ interface EditorGroupViewProps {
   onSave: (path: string, content?: string) => void
   onOpenFolder?: () => void
   onOpenFile?: () => void
+  onOpenRepoFile?: (relPath: string) => void
+  onOpenDiff?: (spec: DiffSpec, title: string) => void
+  onOpenReview?: (commit: GitCommit) => void
+  blames: Map<string, GitBlameRun[]>
   onOpenSettings?: () => void
   recentFolders?: string[]
   onOpenRecent?: (dir: string) => void
@@ -41,7 +49,7 @@ interface EditorGroupViewProps {
 export function EditorGroupView({
   group, isFocused, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave,
-  onOpenFolder, onOpenFile, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
+  onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, blames, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
   const activeTab = group.tabs.find((t) => t.path === group.activePath) ?? null
 
@@ -75,7 +83,11 @@ export function EditorGroupView({
               idPrefix={activeTab.path.replace(/[^a-zA-Z0-9]/g, '-')}
             />
           ) : activeTab.kind === 'diff' && activeTab.diff ? (
-            <DiffView spec={activeTab.diff} />
+            <DiffView spec={activeTab.diff} themeKey={themeById(themeId).editorTheme} />
+          ) : activeTab.kind === 'review' && activeTab.review ? (
+            <CommitReviewView spec={activeTab.review} themeKey={themeById(themeId).editorTheme} onOpenFile={(rel) => onOpenRepoFile?.(rel)} />
+          ) : activeTab.kind === 'history' && activeTab.history ? (
+            <FileHistoryView file={activeTab.history.file} onOpenDiff={(s, t) => onOpenDiff?.(s, t)} onOpenReview={(c) => onOpenReview?.(c)} onOpenFile={(rel) => onOpenRepoFile?.(rel)} />
           ) : activeTab.kind === 'console' ? (
             <ConsolePane chunks={debugConsole} />
           ) : (
@@ -86,6 +98,7 @@ export function EditorGroupView({
               themeKey={themeById(themeId).editorTheme}
               gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
               breakpoints={breakpoints.get(activeTab.path)}
+              blame={blames.get(activeTab.path) ?? null}
               onToggleBreakpoint={(line) => onToggleBreakpoint(activeTab.path, line)}
               stoppedLine={debugStopped && debugStopped.path === activeTab.path ? debugStopped.line : null}
               onChange={(content) => onChangeContent(activeTab.path, content)}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'preact/hooks'
 import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus, RefreshCw, CopyMinus, CopyPlus, Play, Square, RedoDot, ArrowDownToDot, ArrowUpFromDot, BugPlay } from 'lucide-preact'
-import type { FsTreeEntry, FileListEntry, LaunchOpenRequest } from '../../electron/types'
+import type { FsTreeEntry, FileListEntry, LaunchOpenRequest, GitBlameRun } from '../../electron/types'
 import { FileTree, NewEntryRow } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -10,6 +10,8 @@ import { OpenEditors } from './components/OpenEditors'
 import { SourceControlPanel } from './components/SourceControlPanel'
 import { DebugPanel } from './components/DebugPanel'
 import type { ConsoleChunk } from './components/ConsolePane'
+import { parseNoteRef } from './lib/reviewNotes'
+import { reviewNotesStore } from './lib/reviewNotesStore'
 
 // The one Debug Console tab per window (synthetic path, kind 'console').
 const CONSOLE_PATH = 'debug-console://main'
@@ -86,6 +88,7 @@ export function App() {
       const t = themeById(s.theme)
       setThemeId(t.id)
       applyTheme(t)
+      if (s.blameEnabled) setBlameEnabled(true)
       if (typeof s.sidebarWidth === 'number' && s.sidebarWidth > 0) {
         setSidebarWidth(Math.max(180, Math.min(s.sidebarWidth, 700)))
       }
@@ -645,7 +648,7 @@ export function App() {
   }, [openPath])
 
   // Open a read-only git diff as a tab in the focused leaf (or focus it if already open).
-  const openDiff = useCallback((spec: { mode: 'working' | 'commit'; file: string; hash?: string }, title: string) => {
+  const openDiff = useCallback((spec: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }, title: string) => {
     const diffPath = `diff://${spec.mode}/${spec.hash ?? 'wt'}/${spec.file}`
     const leafId = activeLeafIdRef.current
     const leaf = findLeaf(treeRef.current, leafId)
@@ -656,6 +659,43 @@ export function App() {
     setTree((prev) => updateLeaf(prev, leafId, (l) => {
       const tab: OpenTab = { path: diffPath, name: title, content: '', savedContent: '', kind: 'diff', diff: spec }
       return { ...l, tabs: [...l.tabs, tab], activePath: diffPath }
+    }))
+  }, [])
+
+  // Open (or reveal) a review page in the focused leaf.
+  const openReviewTab = useCallback((reviewPath: string, name: string, review: NonNullable<OpenTab['review']>) => {
+    const leafId = activeLeafIdRef.current
+    const leaf = findLeaf(treeRef.current, leafId)
+    if (leaf?.tabs.some((t) => t.path === reviewPath)) {
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: reviewPath })))
+      return
+    }
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      const tab: OpenTab = { path: reviewPath, name, content: '', savedContent: '', kind: 'review', review }
+      return { ...l, tabs: [...l.tabs, tab], activePath: reviewPath }
+    }))
+  }, [])
+  // A commit as a review page (all its files stacked).
+  const openReview = useCallback((commit: { hash: string; short: string; subject: string }) => {
+    openReviewTab(`review://commit/${commit.hash}`, `Review ${commit.short}`, { kind: 'commit', hash: commit.hash, title: `${commit.short} ${commit.subject}` })
+  }, [openReviewTab])
+  // The current branch's changes since it diverged from `base`.
+  const openBranchReview = useCallback((base: string) => {
+    openReviewTab(`review://range/${base}`, `Branch vs ${base}`, { kind: 'range', base, title: `Changes on HEAD since ${base}` })
+  }, [openReviewTab])
+
+  // A file's commit history (follows renames) as a tab.
+  const openFileHistory = useCallback((rel: string) => {
+    const histPath = `history://${rel}`
+    const leafId = activeLeafIdRef.current
+    const leaf = findLeaf(treeRef.current, leafId)
+    if (leaf?.tabs.some((t) => t.path === histPath)) {
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: histPath })))
+      return
+    }
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      const tab: OpenTab = { path: histPath, name: `History ${rel.split('/').pop() ?? rel}`, content: '', savedContent: '', kind: 'history', history: { file: rel } }
+      return { ...l, tabs: [...l.tabs, tab], activePath: histPath }
     }))
   }, [])
 
@@ -680,6 +720,46 @@ export function App() {
   const debugStatusRef = useRef(debugStatus)
   debugStatusRef.current = debugStatus
   const breakpointsRef = useRef(breakpoints)
+
+  // View → Toggle Blame. Blame runs are fetched for the ACTIVE editor tab only (per file,
+  // keyed by absolute path) and refreshed when the file is saved or source control refreshes.
+  const [blameEnabled, setBlameEnabled] = useState(false)
+  const [blames, setBlames] = useState<Map<string, GitBlameRun[]>>(new Map())
+  const toggleBlame = useCallback(() => {
+    setBlameEnabled((v) => {
+      void window.editorApi.setSettings({ blameEnabled: !v }).catch(() => {})
+      return !v
+    })
+  }, [])
+  const activeEditorPath = (() => {
+    const leaf = findLeaf(tree, activeLeafId)
+    const tab = leaf?.tabs.find((x) => x.path === leaf.activePath)
+    return tab && (tab.kind === undefined || tab.kind === 'editor') && !tab.untitled && !tab.loose ? tab.path : null
+  })()
+  // Review notes for the open repository → the shared store (persisted on every change).
+  useEffect(() => {
+    let cancelled = false
+    if (!root) { reviewNotesStore.load(null, []); return }
+    window.editorApi.getSettings().then((s) => {
+      if (!cancelled) reviewNotesStore.load(root, s.reviewNotes?.[root] ?? [])
+    }).catch(() => { if (!cancelled) reviewNotesStore.load(root, []) })
+    return () => { cancelled = true }
+  }, [root])
+
+  useEffect(() => {
+    if (!blameEnabled) { setBlames(new Map()); return }
+    if (!root || !activeEditorPath || !activeEditorPath.startsWith(root + '/')) return
+    const rel = activeEditorPath.slice(root.length + 1)
+    let cancelled = false
+    window.editorApi.git.blame(rel).then((r) => {
+      if (cancelled) return
+      setBlames((prev) => { const next = new Map(prev); next.set(activeEditorPath, r.runs); return next })
+    }).catch(() => {
+      // Not in git (untracked/new file, or not a repo): clear so the gutter hides.
+      if (!cancelled) setBlames((prev) => { if (!prev.has(activeEditorPath)) return prev; const next = new Map(prev); next.delete(activeEditorPath); return next })
+    })
+    return () => { cancelled = true }
+  }, [blameEnabled, activeEditorPath, root, scmRefresh])
   breakpointsRef.current = breakpoints
 
   // Debug Console: program output as append-only chunks (App state, not tab content —
@@ -940,7 +1020,7 @@ export function App() {
     const leaf = findLeaf(treeRef.current, leafId)
     const tab = leaf?.tabs.find((t) => t.path === path)
     if (!tab) return
-    if (tab.kind === 'preview' || tab.kind === 'diff') return // read-only tabs
+    if (tab.kind !== undefined && tab.kind !== 'editor') return // read-only / synthetic tabs
     const currentContent = contentOverride ?? tab.content
 
     // Untitled buffer → Save-As. Main owns the dialog + the confined/loose write decision;
@@ -1191,7 +1271,7 @@ export function App() {
   const revertFocusedTab = useCallback(async () => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
-    if (!leaf || !tab || tab.kind === 'preview' || tab.kind === 'diff') return
+    if (!leaf || !tab || (tab.kind !== undefined && tab.kind !== 'editor')) return
     if (tab.untitled) {
       if (tab.content === tab.savedContent) return
       setTree((prev) => mapLeaves(prev, (l) => ({
@@ -1249,6 +1329,7 @@ export function App() {
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
     const offToggleSidebar = window.editorApi.onMenu('menu:toggle-sidebar', () => toggleSidebar())
+    const offToggleBlame = window.editorApi.onMenu('menu:toggle-blame', () => toggleBlame())
     const offSearch = window.editorApi.onMenu('menu:search', () => openSearchView())
     const offPreview = window.editorApi.onMenu('menu:preview-side', () => openPreviewToSide())
     const offOpenRecent = window.editorApi.onMenu('menu:open-recent', (dir) => { if (dir) void openFolder(dir) })
@@ -1266,8 +1347,8 @@ export function App() {
     const offTestRunFile = window.editorApi.onMenu('menu:test-run-file', () => startTests('file', true))
     const offTestDbgAll = window.editorApi.onMenu('menu:test-debug-all', () => startTests('all', false))
     const offTestRunAll = window.editorApi.onMenu('menu:test-run-all', () => startTests('all', true))
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile(); offTestDbgFile(); offTestRunFile(); offTestDbgAll(); offTestRunAll() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile, startTests])
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile(); offTestDbgFile(); offTestRunFile(); offTestDbgAll(); offTestRunAll(); offToggleBlame() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile, startTests, toggleBlame])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -1459,6 +1540,16 @@ export function App() {
               refreshToken={scmRefresh}
               rootPath={root}
               onOpenDiff={openDiff}
+              onOpenReview={openReview}
+              onOpenBranchReview={openBranchReview}
+              onOpenHistory={openFileHistory}
+              onOpenNoteDiff={(ref, file) => {
+                const r = parseNoteRef(ref)
+                if (!r) return
+                const name = file.split('/').pop() ?? file
+                const label = r.mode === 'commit' ? `(${(r.hash ?? '').slice(0, 7)})` : r.mode === 'range' ? '(Branch)' : r.mode === 'staged' ? '(Staged)' : '(Working Tree)'
+                openDiff({ mode: r.mode, file, hash: r.hash }, `${name} ${label}`)
+              }}
               onOpenFile={(rel) => {
                 if (!root) return
                 const abs = `${root}/${rel}`
@@ -1532,6 +1623,10 @@ export function App() {
               onResize={resizeSplit}
               onOpenFolder={() => void openFolder()}
               onOpenFile={() => void openFileViaDialog()}
+              blames={blames}
+              onOpenDiff={openDiff}
+              onOpenReview={openReview}
+              onOpenRepoFile={(rel) => { if (root) openFilePermanent({ name: rel.split('/').pop() ?? rel, path: `${root}/${rel}`, type: 'file' }) }}
               onOpenSettings={() => setSettingsOpen(true)}
               recentFolders={recentFolders}
               onOpenRecent={(dir) => void openFolder(dir)}
@@ -1566,8 +1661,9 @@ export function App() {
         // Untitled/preview/diff tabs have synthetic paths — but preview and diff tabs
         // still refer to a real disk file (sourcePath / the diffed file), so path
         // actions target THAT file; only untitled tabs have nothing on disk.
-        const synthetic = !!menuTab.untitled || menuTab.kind === 'preview' || menuTab.kind === 'diff'
-        const filePath = menuTab.untitled || menuTab.kind === 'console' ? null
+        const synthetic = !!menuTab.untitled || menuTab.kind === 'preview' || menuTab.kind === 'diff' || menuTab.kind === 'review' || menuTab.kind === 'history'
+        const filePath = menuTab.untitled || menuTab.kind === 'console' || menuTab.kind === 'review' ? null
+          : menuTab.kind === 'history' ? (root && menuTab.history ? `${root}/${menuTab.history.file}` : null)
           : menuTab.kind === 'preview' ? (menuTab.sourcePath ?? null)
           : menuTab.kind === 'diff' ? (root && menuTab.diff ? `${root}/${menuTab.diff.file}` : null)
           : menuTab.path
@@ -1593,6 +1689,8 @@ export function App() {
           { kind: 'item', label: 'Reveal in Explorer', disabled: !filePath || !root || !filePath.startsWith(root + '/'), onClick: () => {
               if (filePath) revealInExplorer(filePath)
             } },
+          { kind: 'separator' },
+          { kind: 'item', label: 'File History', disabled: !relPath || menuTab.kind === 'history', onClick: () => { if (relPath) openFileHistory(relPath) } },
           { kind: 'separator' },
           { kind: 'item', label: 'Keep Open', disabled: !menuTab.ephemeral, onClick: () => promoteTab(menuLeaf.id, menuTab.path) },
           { kind: 'separator' },

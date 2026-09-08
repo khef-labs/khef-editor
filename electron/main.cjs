@@ -490,6 +490,11 @@ function buildMenu(recentFolders = [], recentFiles = []) {
           accelerator: 'CmdOrCtrl+B',
           click: () => sendToFocused('menu:toggle-sidebar'),
         },
+        {
+          label: 'Toggle Blame',
+          accelerator: 'Alt+CmdOrCtrl+B',
+          click: () => sendToFocused('menu:toggle-blame'),
+        },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },

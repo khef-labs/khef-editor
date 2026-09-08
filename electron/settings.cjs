@@ -16,6 +16,9 @@ const DEFAULTS = {
   recentFiles: [], // most-recent-first list of files opened as editor tabs
   pythonPath: '', // debugger interpreter override; empty = auto (.venv/bin/python, else python3)
   rdbgPath: '', // ruby debugger (rdbg) override; empty = auto (login-shell lookup, else rdbg)
+  reviewBase: {}, // branch-review base ref per repository root
+  blameEnabled: false, // View → Toggle Blame
+  reviewNotes: {}, // local review notes per repository root (see src/renderer/lib/reviewNotes.ts)
 }
 
 const MAX_RECENT = 12

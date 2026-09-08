@@ -1,40 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { computeDiff, toUnifiedRows, type DiffRow, type DiffRowKind } from '../lib/diff'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { mountDiff, type DiffLayout, type DiffHandle } from '../lib/diffMount'
+import { noteRef } from '../lib/reviewNotes'
+import { useDiffNotes } from './useDiffNotes'
+import type { EditorThemeKey } from '../lib/themes'
 
 export interface DiffSpec {
-  mode: 'working' | 'commit'
+  // 'range': hash is the merge-base (old side), new side is HEAD.
+  mode: 'working' | 'staged' | 'commit' | 'range'
   file: string
   hash?: string
 }
 
 interface DiffViewProps {
   spec: DiffSpec
+  themeKey: EditorThemeKey
 }
 
-export type DiffViewMode = 'split' | 'unified'
+export type DiffViewMode = DiffLayout
 
 // Remembered across diff tabs within the session; seeded from settings on first mount
 // and persisted on change.
 let sessionDiffMode: DiffViewMode | null = null
 
-// A contiguous run of changed rows, marked on the overview ruler.
-interface DiffHunk {
-  start: number
-  len: number
-  kind: DiffRowKind
-}
-
-// Read-only diff with two layouts, toggled in the header and remembered in settings:
-//  - split: aligned old|new row PAIRS (long lines soft-wrap on either side without the
-//    sides drifting out of alignment)
-//  - unified: single column, GitHub hunk order (removals before additions)
-// An overview ruler on the right marks changed regions; clicking it jumps there.
-export function DiffView({ spec }: DiffViewProps) {
-  const [rows, setRows] = useState<DiffRow[] | null>(null)
+// Read-only diff on CodeMirror's merge package, so a diff gets the same syntax colours and
+// theme as the editor, word-level change marks, and folded unchanged regions. Two layouts,
+// toggled in the header and remembered in settings:
+//  - split: old | new side by side (MergeView; chunks stay aligned, long lines soft-wrap)
+//  - unified: one column, deletions inline above insertions (unifiedMergeView)
+export function DiffView({ spec, themeKey }: DiffViewProps) {
+  const [texts, setTexts] = useState<{ old: string; new: string } | null>(null)
   const [labels, setLabels] = useState<{ old: string; new: string }>({ old: '', new: '' })
   const [error, setError] = useState<string | null>(null)
   const [mode, setModeState] = useState<DiffViewMode>(sessionDiffMode ?? 'split')
-  const bodyRef = useRef<HTMLDivElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
+  const handleRef = useRef<DiffHandle | null>(null)
+  const { notesOptions, pushNotes, menuEl, count: noteCount } = useDiffNotes(noteRef(spec), spec.file, handleRef)
 
   // First mount of the session: adopt the persisted preference.
   useEffect(() => {
@@ -55,59 +55,34 @@ export function DiffView({ spec }: DiffViewProps) {
 
   useEffect(() => {
     let cancelled = false
-    setRows(null); setError(null)
+    setTexts(null); setError(null)
     window.editorApi.git.fileDiff(spec).then((d) => {
       if (cancelled) return
       setLabels({ old: d.oldLabel, new: d.newLabel })
-      setRows(computeDiff(d.oldText, d.newText))
+      setTexts({ old: d.oldText, new: d.newText })
     }).catch((e) => {
-      if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+      const m = e instanceof Error ? e.message : String(e)
+      if (!cancelled) setError(m.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ''))
     })
     return () => { cancelled = true }
   }, [spec.mode, spec.file, spec.hash])
 
-  const unified = useMemo(() => (rows && mode === 'unified' ? toUnifiedRows(rows) : null), [rows, mode])
-  // Rows as displayed — one ruler marker / jump index per rendered row, in either mode.
-  const displayKinds = useMemo<DiffRowKind[]>(() => {
-    if (unified) return unified.map((r) => r.kind)
-    return rows ? rows.map((r) => r.kind) : []
-  }, [rows, unified])
-
-  // Contiguous same-kind runs of changed rows, for the ruler markers.
-  const hunks = useMemo<DiffHunk[]>(() => {
-    const out: DiffHunk[] = []
-    for (let i = 0; i < displayKinds.length; i++) {
-      const kind = displayKinds[i]
-      if (kind === 'same') continue
-      const last = out[out.length - 1]
-      if (last && last.kind === kind && last.start + last.len === i) last.len++
-      else out.push({ start: i, len: 1, kind })
-    }
-    return out
-  }, [displayKinds])
-
-  const rowCount = displayKinds.length
-
-  const jumpToRow = (index: number) => {
-    const body = bodyRef.current
-    if (!body || rowCount === 0) return
-    const row = body.children[Math.max(0, Math.min(index, rowCount - 1))]
-    row?.scrollIntoView({ block: 'center' })
-  }
-
-  // Click anywhere on the ruler: map the click's vertical position to a row index and
-  // jump there. Marker clicks land on the right hunk because markers sit at the same
-  // proportional position the mapping produces.
-  const onRulerClick = (e: MouseEvent) => {
-    if (rowCount === 0) return
-    const track = e.currentTarget as HTMLElement
-    const rect = track.getBoundingClientRect()
-    const frac = (e.clientY - rect.top) / rect.height
-    jumpToRow(Math.floor(frac * rowCount))
-  }
+  // Mount the CodeMirror view for the current texts/mode/theme; rebuilt from scratch when
+  // any of them change (cheap — the views are read-only and hold no user state).
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host || !texts) return
+    const h = mountDiff(host, {
+      oldText: texts.old, newText: texts.new,
+      filename: spec.file.split('/').pop() ?? spec.file,
+      layout: mode, themeKey, notes: notesOptions,
+    })
+    handleRef.current = h
+    pushNotes(h)
+    return () => { handleRef.current = null; h.destroy() }
+  }, [texts, mode, themeKey, spec.file, notesOptions, pushNotes])
 
   if (error) return <div class="diff-view"><div class="diff-error">{error}</div></div>
-  if (!rows) return <div class="diff-view"><div class="diff-loading">Loading diff…</div></div>
 
   return (
     <div class="diff-view" data-testid="diff-view">
@@ -120,48 +95,15 @@ export function DiffView({ spec }: DiffViewProps) {
         ) : (
           <span class="diff-side-label">{labels.old} → {labels.new}</span>
         )}
+        {noteCount > 0 && <span class="diff-note-count" title="Review notes on this diff (right-click a line to add one)">{noteCount} {noteCount === 1 ? 'note' : 'notes'}</span>}
         <span class="diff-mode-toggle">
           <button class={`diff-mode-btn${mode === 'split' ? ' active' : ''}`} onClick={() => setMode('split')}>Split</button>
           <button class={`diff-mode-btn${mode === 'unified' ? ' active' : ''}`} onClick={() => setMode('unified')}>Unified</button>
         </span>
       </div>
-      <div class="diff-main">
-        <div class="diff-body" ref={bodyRef}>
-          {unified
-            ? unified.map((r, i) => (
-                <div key={i} class={`diff-urow diff-${r.kind}`}>
-                  <span class="diff-num">{r.oldNum ?? ''}</span>
-                  <span class="diff-num">{r.newNum ?? ''}</span>
-                  <span class="diff-sign">{r.kind === 'add' ? '+' : r.kind === 'del' ? '−' : ''}</span>
-                  <span class="diff-text">{r.text}</span>
-                </div>
-              ))
-            : rows.map((r, i) => (
-                <div key={i} class="diff-pair">
-                  <div class={`diff-cell diff-${r.kind === 'add' ? 'empty' : r.kind}`}>
-                    <span class="diff-num">{r.oldNum ?? ''}</span>
-                    <span class="diff-text">{r.oldText ?? ''}</span>
-                  </div>
-                  <div class={`diff-cell diff-${r.kind === 'del' ? 'empty' : r.kind}`}>
-                    <span class="diff-num">{r.newNum ?? ''}</span>
-                    <span class="diff-text">{r.newText ?? ''}</span>
-                  </div>
-                </div>
-              ))}
-        </div>
-        <div class="diff-ruler" onClick={onRulerClick} title="Click to jump to a change">
-          {hunks.map((h, i) => (
-            <div
-              key={i}
-              class={`diff-marker diff-marker-${h.kind}`}
-              style={{
-                top: `${(h.start / rowCount) * 100}%`,
-                height: `max(${(h.len / rowCount) * 100}%, 3px)`,
-              }}
-            />
-          ))}
-        </div>
-      </div>
+      {!texts && <div class="diff-loading">Loading diff…</div>}
+      <div class={`diff-host diff-tints${mode === 'split' ? ' diff-host-split' : ''}`} ref={hostRef} />
+      {menuEl}
     </div>
   )
 }

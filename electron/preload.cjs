@@ -8,7 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Whitelisted menu events the renderer may subscribe to. Anything not listed is
 // unreachable from the renderer.
-const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:new-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:search', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent', 'menu:open-loose', 'menu:open-launch', 'menu:debug-start', 'menu:debug-stop', 'menu:debug-step-over', 'menu:debug-step-in', 'menu:debug-step-out', 'menu:run-file', 'menu:test-run-file', 'menu:test-debug-file', 'menu:test-run-all', 'menu:test-debug-all'])
+const MENU_CHANNELS = new Set(['menu:open-folder', 'menu:open-file', 'menu:new-file', 'menu:save', 'menu:quick-open', 'menu:settings', 'menu:close-tab', 'menu:split', 'menu:toggle-sidebar', 'menu:search', 'menu:preview-side', 'menu:open-recent', 'menu:clear-recent', 'menu:open-loose', 'menu:open-launch', 'menu:debug-start', 'menu:debug-stop', 'menu:debug-step-over', 'menu:debug-step-in', 'menu:debug-step-out', 'menu:run-file', 'menu:test-run-file', 'menu:test-debug-file', 'menu:test-run-all', 'menu:test-debug-all', 'menu:toggle-blame'])
 
 contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('editorApi', {
     status: () => ipcRenderer.invoke('git:status'),
     log: (skip, limit) => ipcRenderer.invoke('git:log', skip ?? 0, limit ?? 50),
     commitFiles: (hash) => ipcRenderer.invoke('git:commitFiles', hash),
+    commitDetail: (hash) => ipcRenderer.invoke('git:commitDetail', hash),
+    branches: () => ipcRenderer.invoke('git:branches'),
+    rangeLog: (base, skip, limit) => ipcRenderer.invoke('git:rangeLog', base, skip ?? 0, limit ?? 50),
+    rangeDetail: (base) => ipcRenderer.invoke('git:rangeDetail', base),
+    fileHistory: (file, skip, limit) => ipcRenderer.invoke('git:fileHistory', file, skip ?? 0, limit ?? 100),
+    blame: (file) => ipcRenderer.invoke('git:blame', file),
     fileDiff: (args) => ipcRenderer.invoke('git:fileDiff', args),
   },
 
