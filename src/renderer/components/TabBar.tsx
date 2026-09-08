@@ -132,7 +132,7 @@ export function TabBar({ groupId, tabs, activePath, onActivate, onClose, onPromo
         })}
       </div>
       <div class="tabbar-actions">
-        <button class="tabbar-action" title="Open Preview to the Side" disabled={!canPreview} onClick={onPreview}>
+        <button class="tabbar-action" title="Open Preview" disabled={!canPreview} onClick={onPreview}>
           <Eye size={16} />
         </button>
         <button class="tabbar-action" title="Split Editor Right" disabled={!active} onClick={onSplitRight}>

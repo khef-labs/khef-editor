@@ -457,9 +457,9 @@ export function App() {
   }, [])
 
   // "Open Preview" from the Explorer menu. A preview never floats alone: if the file
-  // isn't open anywhere, open it in the focused pane first, then split the preview to
-  // its side (same layout Cmd+Shift+V produces). If a preview of the file is already
-  // open, just focus it.
+  // isn't open anywhere, open it in the focused pane first, then add the preview as a
+  // tab in that same group (same result Cmd+Shift+V produces). If a preview of the file
+  // is already open, just focus it.
   const openTreeFilePreview = useCallback(async (entry: FsTreeEntry) => {
     setError(null)
     const previewPath = `preview://${entry.path}`
@@ -496,12 +496,11 @@ export function App() {
         kind: 'preview',
         sourcePath: entry.path,
       }
-      setTree((prev) => {
-        const res = splitLeafWithTab(prev, activeLeafIdRef.current, 'row', previewTab)
-        if (!res) return prev
-        setActiveLeafId(res.newLeafId)
-        return res.tree
-      })
+      setTree((prev) => updateLeaf(prev, activeLeafIdRef.current, (l) => ({
+        ...l,
+        tabs: [...l.tabs, previewTab],
+        activePath: previewPath,
+      })))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -1201,9 +1200,10 @@ export function App() {
     })
   }, [])
 
-  // Open a rendered Markdown/Mermaid preview of a tab in a split to the side.
-  // If a preview of this file is already open, just focus it.
-  const openPreviewForTab = useCallback((leafId: string, path: string) => {
+  // Open a rendered Markdown/Mermaid preview of a tab. Defaults to the SAME tab group
+  // (VS Code's Cmd+K V); pass toSide to split it into a pane beside the source instead
+  // (VS Code's Cmd+Shift+V). If a preview of this file is already open, just focus it.
+  const openPreviewForTab = useCallback((leafId: string, path: string, toSide = false) => {
     const leaf = findLeaf(treeRef.current, leafId)
     const src = leaf?.tabs.find((t) => t.path === path)
     if (!src || src.kind === 'preview' || !isPreviewable(src.name)) return
@@ -1224,6 +1224,16 @@ export function App() {
       kind: 'preview',
       sourcePath: src.path,
     }
+    if (!toSide) {
+      // Same group: append the preview beside its source tab and focus it.
+      setActiveLeafId(leafId)
+      setTree((prev) => updateLeaf(prev, leafId, (l) => ({
+        ...l,
+        tabs: [...l.tabs, previewTab],
+        activePath: previewPath,
+      })))
+      return
+    }
     setTree((prev) => {
       const res = splitLeafWithTab(prev, leafId, 'row', previewTab)
       if (!res) return prev
@@ -1232,10 +1242,11 @@ export function App() {
     })
   }, [])
 
-  // Keyboard entry point (Cmd+Shift+V): preview the focused pane's active tab.
-  const openPreviewToSide = useCallback(() => {
+  // Keyboard entry point (Cmd+Shift+V): preview the focused pane's active tab, in the
+  // same group. The tab context menu offers the to-the-side variant.
+  const openPreviewToSide = useCallback((toSide = false) => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
-    if (leaf?.activePath) openPreviewForTab(leaf.id, leaf.activePath)
+    if (leaf?.activePath) openPreviewForTab(leaf.id, leaf.activePath, toSide)
   }, [openPreviewForTab])
 
   const closeFocusedPane = useCallback(() => {
@@ -1696,6 +1707,7 @@ export function App() {
           { kind: 'separator' },
           { kind: 'item', label: 'Split Right', onClick: () => splitRightWithTab(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Open Preview', hint: '⇧⌘V', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Open Preview to the Side', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path, true) },
         ]
         return <ContextMenu x={tabMenu.x} y={tabMenu.y} entries={entries} onClose={() => setTabMenu(null)} />
       })()}
