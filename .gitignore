@@ -36,3 +36,6 @@ tmp/
 
 # Local debugger playground
 shadow/
+
+# Icon source export (the .icns is what ships)
+build/icon.png
