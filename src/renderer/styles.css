@@ -1192,8 +1192,15 @@ html, body, #app {
 .preview-content h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-soft); }
 .preview-content h3 { font-size: 1.25em; }
 .preview-content p { margin: 0 0 1em; }
-.preview-content a { color: var(--bg-statusbar); text-decoration: none; }
-.preview-content a:hover { text-decoration: underline; }
+.preview-content a {
+  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 62%, var(--fg-bright));
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+.preview-content a:hover {
+  color: color-mix(in srgb, var(--accent) 45%, var(--fg-bright));
+}
 .preview-content ul, .preview-content ol { margin: 0 0 1em; padding-left: 1.6em; }
 .preview-content li { margin: 0.2em 0; }
 .preview-content code {
