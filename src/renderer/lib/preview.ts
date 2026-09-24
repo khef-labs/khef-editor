@@ -30,14 +30,27 @@ export function isPreviewable(filename: string): boolean {
   return previewKindForFilename(filename) !== null
 }
 
+// Whether an editor tab can be previewed: a previewable file name, or an untitled buffer
+// (no extension yet — previewed as Markdown, so a scratch buffer can be checked before it
+// is ever saved).
+export function canPreviewTab(tab: { name: string; untitled?: boolean }): boolean {
+  return !!tab.untitled || isPreviewable(tab.name)
+}
+
 // Shared DOMPurify config: no scripts, styles, or remote-loading elements. We allow
 // common markdown output plus inline SVG (for rendered mermaid diagrams).
 // Markdown config: strip scripts, inline styles, and remote-loading elements. Markdown
 // has no business carrying inline styles, so we forbid them outright.
+// `data-mermaid-id` is the ONE data attribute allowed through: it marks the placeholder
+// <div> that renderMarkdown emits for each ```mermaid block, and PreviewPane finds the slot
+// by it after the async render. With ALLOW_DATA_ATTR false and no ADD_ATTR, DOMPurify
+// stripped it and every diagram silently vanished (nothing to hydrate). A hand-written
+// <div data-mermaid-id> in the markdown can at most receive a sanitized SVG.
 const MD_PURIFY_CONFIG = {
   FORBID_TAGS: ['script', 'style', 'link', 'iframe', 'object', 'embed', 'form', 'input', 'base'],
   FORBID_ATTR: ['style'],
   ALLOW_DATA_ATTR: false,
+  ADD_ATTR: ['data-mermaid-id'],
   USE_PROFILES: { html: true },
 }
 

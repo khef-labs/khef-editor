@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { X, Circle, Eye, SquareSplitHorizontal, Ellipsis } from 'lucide-preact'
-import { isPreviewable } from '../lib/preview'
+import { canPreviewTab } from '../lib/preview'
 import { beginTabDrag, getTabDrag, endTabDrag, type TabDragSource } from '../lib/tabDrag'
 import { tabHoverPath } from '../lib/editorGroups'
 import type { OpenTab } from '../lib/editorGroups'
@@ -60,7 +60,7 @@ export function TabBar({ groupId, tabs, activePath, onActivate, onClose, onPromo
   if (tabs.length === 0) return null
   const active = tabs.find((t) => t.path === activePath) ?? null
   const isEditorTab = !!active && (active.kind === undefined || active.kind === 'editor')
-  const canPreview = isEditorTab && !!active && isPreviewable(active.name)
+  const canPreview = isEditorTab && !!active && canPreviewTab(active)
   return (
     <div class="tabbar" data-testid="tabbar">
       <div

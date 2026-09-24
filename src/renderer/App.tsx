@@ -24,7 +24,7 @@ import { isPytestFile } from './lib/pytest'
 import { parsePytestOutput } from './lib/pytestResults'
 import type { TabDragSource } from './lib/tabDrag'
 import { installTooltips } from './lib/tooltip'
-import { isPreviewable } from './lib/preview'
+import { isPreviewable, canPreviewTab } from './lib/preview'
 import {
   makeLeaf, leaves, findLeaf, updateLeaf, mapLeaves, splitLeaf, splitLeafWithTab, removeLeaf, soloLeaf, setSplitSizes, moveTabAcrossLeaves,
   type LayoutNode, type OpenTab,
@@ -1048,13 +1048,23 @@ export function App() {
           }
           // Adopt the real path in place. If the user typed during the dialog, keep their
           // current content and leave the tab dirty (savedContent = what was written).
-          return updateLeaf(prev, leafId, (l) => ({
+          const adopted = updateLeaf(prev, leafId, (l) => ({
             ...l,
             tabs: l.tabs.map((t) => (t.path === path
               ? { ...t, path: res.path, name: res.name, content: currentContent, untitled: undefined, loose: res.loose || undefined, savedContent: writtenContent }
               : t)),
             activePath: l.activePath === path ? res.path : l.activePath,
           }))
+          // A preview of the untitled buffer (in any pane) follows it to the real path.
+          const oldPreview = `preview://${path}`, newPreview = `preview://${res.path}`
+          return mapLeaves(adopted, (l) => {
+            if (!l.tabs.some((t) => t.path === oldPreview)) return l
+            return {
+              ...l,
+              tabs: l.tabs.map((t) => (t.path === oldPreview ? { ...t, path: newPreview, sourcePath: res.path, name: `Preview ${res.name}` } : t)),
+              activePath: l.activePath === oldPreview ? newPreview : l.activePath,
+            }
+          })
         })
         setScmRefresh((n) => n + 1)
       } catch (e) {
@@ -1206,7 +1216,7 @@ export function App() {
   const openPreviewForTab = useCallback((leafId: string, path: string, toSide = false) => {
     const leaf = findLeaf(treeRef.current, leafId)
     const src = leaf?.tabs.find((t) => t.path === path)
-    if (!src || src.kind === 'preview' || !isPreviewable(src.name)) return
+    if (!src || (src.kind !== undefined && src.kind !== 'editor') || !canPreviewTab(src)) return
     const previewPath = `preview://${src.path}`
     // Already open somewhere? Focus that pane/tab.
     for (const l of leaves(treeRef.current)) {
@@ -1679,6 +1689,8 @@ export function App() {
           : menuTab.kind === 'diff' ? (root && menuTab.diff ? `${root}/${menuTab.diff.file}` : null)
           : menuTab.path
         const relPath = root && filePath && filePath.startsWith(root + '/') ? filePath.slice(root.length + 1) : null
+        // Untitled buffers preview as Markdown; other synthetic tabs (preview/diff/review/history) never do.
+        const canPreviewMenuTab = (menuTab.kind === undefined || menuTab.kind === 'editor') && canPreviewTab(menuTab)
         const entries: MenuEntry[] = [
           { kind: 'item', label: 'Close', hint: '⌘W', onClick: () => closeTab(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Close Others', disabled: menuLeaf.tabs.length < 2, onClick: () => closeOthers(menuLeaf.id, menuTab.path) },
@@ -1706,8 +1718,8 @@ export function App() {
           { kind: 'item', label: 'Keep Open', disabled: !menuTab.ephemeral, onClick: () => promoteTab(menuLeaf.id, menuTab.path) },
           { kind: 'separator' },
           { kind: 'item', label: 'Split Right', onClick: () => splitRightWithTab(menuLeaf.id, menuTab.path) },
-          { kind: 'item', label: 'Open Preview', hint: '⇧⌘V', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path) },
-          { kind: 'item', label: 'Open Preview to the Side', disabled: synthetic || !isPreviewable(menuTab.name), onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path, true) },
+          { kind: 'item', label: 'Open Preview', hint: '⇧⌘V', disabled: !canPreviewMenuTab, onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Open Preview to the Side', disabled: !canPreviewMenuTab, onClick: () => openPreviewForTab(menuLeaf.id, menuTab.path, true) },
         ]
         return <ContextMenu x={tabMenu.x} y={tabMenu.y} entries={entries} onClose={() => setTabMenu(null)} />
       })()}
