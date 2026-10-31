@@ -25,6 +25,7 @@ import { breakpointGutter, stoppedLineField, setBreakpointsEffect, setStoppedLin
 import { blameGutter, setBlameEffect } from '../lib/blameGutter'
 import type { GitBlameRun } from '../../../electron/types'
 import { editorThemeExtension } from '../lib/editorTheme'
+import { linkClick } from '../lib/linkClick'
 import type { EditorThemeKey } from '../lib/themes'
 
 // Overview-ruler cursor marker: a small tick on the editor's right edge showing where
@@ -596,6 +597,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
       extensions: [
         buildEmacsExtension(),
         emacsDomHandlers(),
+        linkClick(),
         breakpointGutter((line) => onToggleBreakpointRef.current?.(line)),
         stoppedLineField,
         blameComp.current.of([]),
