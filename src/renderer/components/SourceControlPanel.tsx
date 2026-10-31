@@ -7,14 +7,19 @@ import { relativeTime } from '../lib/relativeTime'
 import { groupNotes, notesToMarkdown, removeNote, parseNoteRef } from '../lib/reviewNotes'
 import { reviewNotesStore, useReviewNotes } from '../lib/reviewNotesStore'
 
+const SOFT = { ephemeral: true }
+const KEEP = { ephemeral: false }
+
 interface SourceControlPanelProps {
   // Re-fetch trigger: bump to refresh (e.g. when the panel becomes visible or a file saves).
   refreshToken: number
   // Workspace root, for turning git's repo-relative paths into absolute ones.
   rootPath: string | null
-  onOpenDiff: (spec: DiffSpec, title: string) => void
+  // Single-click rows pass ephemeral (soft-open, replaced by the next single-click);
+  // double-click passes ephemeral: false to keep the tab, like the Explorer.
+  onOpenDiff: (spec: DiffSpec, title: string, opts?: { ephemeral?: boolean }) => void
   // Open a commit as a review page (all files stacked).
-  onOpenReview: (commit: GitCommit) => void
+  onOpenReview: (commit: GitCommit, opts?: { ephemeral?: boolean }) => void
   // Open the current branch's changes since `base` as a review page.
   onOpenBranchReview: (base: string) => void
   // Open a file's commit history as a tab.
@@ -190,7 +195,8 @@ export function SourceControlPanel({ refreshToken, rootPath, onOpenDiff, onOpenR
                   key={`s:${c.path}`}
                   class="scm-file-row"
                   title={c.oldPath ? `${c.oldPath} → ${c.path}` : c.path}
-                  onClick={() => onOpenDiff({ mode: 'staged', file: c.path }, `${basename(c.path)} (Staged)`)}
+                  onClick={() => onOpenDiff({ mode: 'staged', file: c.path }, `${basename(c.path)} (Staged)`, SOFT)}
+                  onDblClick={() => onOpenDiff({ mode: 'staged', file: c.path }, `${basename(c.path)} (Staged)`, KEEP)}
                   onContextMenu={(e) => openFileMenu(e, c.path, c.indexStatus ?? c.status)}
                 >
                   <span class="scm-file-name">{basename(c.path)}</span>
@@ -217,7 +223,8 @@ export function SourceControlPanel({ refreshToken, rootPath, onOpenDiff, onOpenR
               key={c.path}
               class="scm-file-row"
               title={c.path}
-              onClick={() => onOpenDiff({ mode: 'working', file: c.path }, `${basename(c.path)} (Working Tree)`)}
+              onClick={() => onOpenDiff({ mode: 'working', file: c.path }, `${basename(c.path)} (Working Tree)`, SOFT)}
+              onDblClick={() => onOpenDiff({ mode: 'working', file: c.path }, `${basename(c.path)} (Working Tree)`, KEEP)}
               onContextMenu={(e) => openFileMenu(e, c.path, c.worktreeStatus ?? c.status)}
             >
               <span class="scm-file-name">{basename(c.path)}</span>
@@ -293,13 +300,15 @@ export function SourceControlPanel({ refreshToken, rootPath, onOpenDiff, onOpenR
               <div key={commit.hash} class="scm-commit">
                 <div
                   class="scm-commit-row"
-                  onClick={() => onOpenReview(commit)}
+                  onClick={() => onOpenReview(commit, SOFT)}
+                  onDblClick={() => onOpenReview(commit, KEEP)}
                   onContextMenu={(e) => { e.preventDefault(); setCommitMenu({ commit, x: e.clientX, y: e.clientY }) }}
                 >
                   <button
                     class="scm-commit-toggle"
                     title={isOpen ? 'Hide files' : 'Show files'}
                     onClick={(e) => { e.stopPropagation(); void toggleCommit(commit.hash) }}
+                    onDblClick={(e) => e.stopPropagation()}
                   >
                     {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </button>
@@ -323,7 +332,8 @@ export function SourceControlPanel({ refreshToken, rootPath, onOpenDiff, onOpenR
                     key={f.path}
                     class="scm-commit-file"
                     title={f.path}
-                    onClick={() => onOpenDiff({ mode: 'commit', file: f.path, hash: commit.hash }, `${basename(f.path)} (${commit.short})`)}
+                    onClick={() => onOpenDiff({ mode: 'commit', file: f.path, hash: commit.hash }, `${basename(f.path)} (${commit.short})`, SOFT)}
+                    onDblClick={() => onOpenDiff({ mode: 'commit', file: f.path, hash: commit.hash }, `${basename(f.path)} (${commit.short})`, KEEP)}
                     onContextMenu={(e) => openFileMenu(e, f.path, f.status)}
                   >
                     <span class="scm-file-name">{basename(f.path)}</span>

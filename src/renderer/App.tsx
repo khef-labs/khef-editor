@@ -365,8 +365,9 @@ export function App() {
         }
         const tab: OpenTab = { path: filePath, name, content, savedContent: content, loose: preloaded?.loose, ephemeral: ephemeral || undefined }
         if (ephemeral) {
-          // Replace an existing ephemeral (plain editor) tab in place, preserving position.
-          const idx = l.tabs.findIndex((t) => t.ephemeral && (t.kind === undefined || t.kind === 'editor'))
+          // Replace the pane's existing ephemeral tab in place, preserving position. The
+          // slot is shared by editor, diff, and review tabs (one per pane, like VS Code).
+          const idx = l.tabs.findIndex((t) => t.ephemeral)
           if (idx >= 0) {
             const tabs = [...l.tabs]
             tabs[idx] = tab
@@ -584,12 +585,43 @@ export function App() {
     }
   }, [loadWorkspaceTree])
 
-  // Promote a tab to permanent (double-click the tab). No-op for preview/diff tabs.
+  // Promote a tab to permanent (double-click the tab, or "Keep Open"). Only editor, diff,
+  // and review tabs are ever ephemeral; clearing the flag on any other tab is a no-op.
   const promoteTab = useCallback((leafId: string, path: string) => {
+    const tab = findLeaf(treeRef.current, leafId)?.tabs.find((t) => t.path === path)
+    if (!tab?.ephemeral) return
     setTree((prev) => updateLeaf(prev, leafId, (l) => ({
       ...l,
-      tabs: l.tabs.map((t) => (t.path === path && (t.kind === undefined || t.kind === 'editor') ? { ...t, ephemeral: undefined } : t)),
+      tabs: l.tabs.map((t) => (t.path === path ? { ...t, ephemeral: undefined } : t)),
     })))
+  }, [])
+
+  // Open a synchronous (no disk read) tab such as a diff or review page in the focused
+  // leaf, with the same soft-open rules as openPath:
+  // - already open here → activate it; a permanent open also promotes an ephemeral tab
+  // - ephemeral → replace the pane's ephemeral slot in place (any kind), else append
+  // Bumping the leaf's open token cancels an in-flight ephemeral file read, so a slow
+  // read from an earlier Explorer click can't land on top of this tab afterwards.
+  const openSyncTab = useCallback((tab: OpenTab, opts?: { ephemeral?: boolean }) => {
+    const ephemeral = !!opts?.ephemeral
+    const leafId = activeLeafIdRef.current
+    openTokens.current.set(leafId, (openTokens.current.get(leafId) ?? 0) + 1)
+    setTree((prev) => updateLeaf(prev, leafId, (l) => {
+      if (l.tabs.some((t) => t.path === tab.path)) {
+        const tabs = ephemeral ? l.tabs : l.tabs.map((t) => (t.path === tab.path && t.ephemeral ? { ...t, ephemeral: undefined } : t))
+        return { ...l, tabs, activePath: tab.path }
+      }
+      const next: OpenTab = { ...tab, ephemeral: ephemeral || undefined }
+      if (ephemeral) {
+        const idx = l.tabs.findIndex((t) => t.ephemeral)
+        if (idx >= 0) {
+          const tabs = [...l.tabs]
+          tabs[idx] = next
+          return { ...l, tabs, activePath: next.path }
+        }
+      }
+      return { ...l, tabs: [...l.tabs, next], activePath: next.path }
+    }))
   }, [])
 
   // A tab was dropped on a tab bar: same pane → reorder in place; different pane → move
@@ -647,36 +679,20 @@ export function App() {
   }, [openPath])
 
   // Open a read-only git diff as a tab in the focused leaf (or focus it if already open).
-  const openDiff = useCallback((spec: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }, title: string) => {
+  // Source Control single-clicks pass ephemeral (soft-open); double-clicks keep it.
+  const openDiff = useCallback((spec: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }, title: string, opts?: { ephemeral?: boolean }) => {
     const diffPath = `diff://${spec.mode}/${spec.hash ?? 'wt'}/${spec.file}`
-    const leafId = activeLeafIdRef.current
-    const leaf = findLeaf(treeRef.current, leafId)
-    if (leaf?.tabs.some((t) => t.path === diffPath)) {
-      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: diffPath })))
-      return
-    }
-    setTree((prev) => updateLeaf(prev, leafId, (l) => {
-      const tab: OpenTab = { path: diffPath, name: title, content: '', savedContent: '', kind: 'diff', diff: spec }
-      return { ...l, tabs: [...l.tabs, tab], activePath: diffPath }
-    }))
-  }, [])
+    openSyncTab({ path: diffPath, name: title, content: '', savedContent: '', kind: 'diff', diff: spec }, opts)
+  }, [openSyncTab])
 
   // Open (or reveal) a review page in the focused leaf.
-  const openReviewTab = useCallback((reviewPath: string, name: string, review: NonNullable<OpenTab['review']>) => {
-    const leafId = activeLeafIdRef.current
-    const leaf = findLeaf(treeRef.current, leafId)
-    if (leaf?.tabs.some((t) => t.path === reviewPath)) {
-      setTree((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, activePath: reviewPath })))
-      return
-    }
-    setTree((prev) => updateLeaf(prev, leafId, (l) => {
-      const tab: OpenTab = { path: reviewPath, name, content: '', savedContent: '', kind: 'review', review }
-      return { ...l, tabs: [...l.tabs, tab], activePath: reviewPath }
-    }))
-  }, [])
-  // A commit as a review page (all its files stacked).
-  const openReview = useCallback((commit: { hash: string; short: string; subject: string }) => {
-    openReviewTab(`review://commit/${commit.hash}`, `Review ${commit.short}`, { kind: 'commit', hash: commit.hash, title: `${commit.short} ${commit.subject}` })
+  const openReviewTab = useCallback((reviewPath: string, name: string, review: NonNullable<OpenTab['review']>, opts?: { ephemeral?: boolean }) => {
+    openSyncTab({ path: reviewPath, name, content: '', savedContent: '', kind: 'review', review }, opts)
+  }, [openSyncTab])
+  // A commit as a review page (all its files stacked). Ephemeral from a Source Control
+  // single-click; permanent from a double-click or a menu.
+  const openReview = useCallback((commit: { hash: string; short: string; subject: string }, opts?: { ephemeral?: boolean }) => {
+    openReviewTab(`review://commit/${commit.hash}`, `Review ${commit.short}`, { kind: 'commit', hash: commit.hash, title: `${commit.short} ${commit.subject}` }, opts)
   }, [openReviewTab])
   // The current branch's changes since it diverged from `base`.
   const openBranchReview = useCallback((base: string) => {

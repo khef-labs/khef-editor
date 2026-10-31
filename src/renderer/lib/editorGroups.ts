@@ -15,8 +15,8 @@ export interface OpenTab {
   review?: { kind: 'commit'; hash: string; title: string } | { kind: 'range'; base: string; title: string }
   // For file-history tabs: the repo-relative file.
   history?: { file: string }
-  // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Only set
-  // on plain editor tabs (never kind:'preview'/'diff').
+  // VS Code "preview tab" soft-open flag. Kept in sync with layout.ts's OpenTab. Set on
+  // editor, diff, and review tabs; at most one ephemeral tab per pane.
   ephemeral?: boolean
   // New unsaved buffer (Cmd+N). Kept in sync with layout.ts's OpenTab.
   untitled?: boolean

@@ -26,7 +26,8 @@ export interface OpenTab {
   // VS Code "preview tab" soft-open: an ephemeral editor tab opened by a single-click in
   // the Explorer. The next single-click REPLACES it (at most one per pane) instead of
   // adding a tab. Cleared (promoted to a permanent tab) by double-clicking the file/tab or
-  // editing the file. Only ever set on plain editor tabs — never on kind:'preview'/'diff'.
+  // editing the file. Set on editor tabs (Explorer single-click) and on diff/review tabs (Source Control
+  // single-click); the slot is shared, so a pane holds at most one ephemeral tab of any kind.
   ephemeral?: boolean
   // A new unsaved buffer (Cmd+N). Its `path` is a synthetic `untitled:N` id (unique per
   // window). First Save opens a native Save dialog; the tab then adopts the real path and
