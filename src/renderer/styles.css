@@ -1169,7 +1169,9 @@ html, body, #app {
   position: absolute;
   inset: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* auto, not hidden: hidden overflow can still be shifted sideways (selection drag,
+     trackpad, find) with no scrollbar to bring it back, leaving the left edge clipped. */
+  overflow-x: auto;
   background: var(--bg);
 }
 .preview-content {
@@ -1224,7 +1226,16 @@ html, body, #app {
   color: var(--fg-dim);
   border-left: 3px solid var(--border-soft);
 }
-.preview-content table { border-collapse: collapse; margin: 0 0 1em; }
+.preview-content table {
+  border-collapse: collapse;
+  margin: 0 0 1em;
+  /* GitHub-style: a wide table scrolls sideways inside its own box instead of spilling
+     past the column, so the prose around it stays put. */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .preview-content th, .preview-content td { border: 1px solid var(--border-soft); padding: 6px 12px; }
 .preview-content th { background: var(--bg-tab-inactive); font-weight: 600; }
 .preview-content img { max-width: 100%; }
