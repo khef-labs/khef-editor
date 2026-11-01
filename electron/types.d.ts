@@ -22,6 +22,11 @@ export interface WorkspaceChangedPayload {
   root: string
 }
 
+export type LinkedPathResult =
+  | { kind: 'file'; path: string }
+  | { kind: 'dir'; path: string }
+  | { kind: 'loose'; file: ReadFileResult }
+
 export interface ReadFileResult {
   path: string
   content: string
@@ -336,6 +341,9 @@ export type LaunchOpenRequest =
 export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
   openLooseFile(): Promise<ReadFileResult | null>
+  // Cmd+clicked path in an editor. Inside the workspace → its realpath (open via readFile).
+  // Outside → main confirms in a native dialog; null when the user cancels.
+  openLinkedPath(filePath: string): Promise<LinkedPathResult | null>
   currentWorkspace(): Promise<CurrentWorkspaceResult>
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>

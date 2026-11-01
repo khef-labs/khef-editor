@@ -19,6 +19,7 @@ import { ContextMenu, type MenuEntry } from './components/ContextMenu'
 import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
+import { setPathOpener } from './lib/linkClick'
 import { moveTab, nextTabIndex } from './lib/tabOrder'
 import { isPytestFile } from './lib/pytest'
 import { parsePytestOutput } from './lib/pytestResults'
@@ -725,6 +726,28 @@ export function App() {
       jumpToLine(filePath, line)
     })
   }, [jumpToLine, openPath])
+
+  // Cmd+click on a file path in an editor (lib/linkClick.ts). Main resolves the raw path:
+  // a workspace file opens like any other, a workspace folder is revealed in the Explorer,
+  // and a file outside the workspace opens as a loose tab only after the user confirms
+  // main's native prompt (null = cancelled).
+  useEffect(() => {
+    setPathOpener((rawPath, line) => {
+      setError(null)
+      window.editorApi.openLinkedPath(rawPath).then((res) => {
+        if (!res) return
+        if (res.kind === 'dir') { revealInExplorer(res.path); return }
+        const filePath = res.kind === 'loose' ? res.file.path : res.path
+        const name = filePath.split('/').pop() ?? filePath
+        const preloaded = res.kind === 'loose' ? { content: res.file.content, loose: true } : undefined
+        void openPath(filePath, name, preloaded).then(() => jumpToLine(filePath, line))
+      }).catch((e: unknown) => {
+        const raw = e instanceof Error ? e.message : String(e)
+        setError(raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''))
+      })
+    })
+    return () => setPathOpener(null)
+  }, [jumpToLine, openPath, revealInExplorer])
 
   // ---------- Python debugging (breakpoints + one DAP session per window) ----------
   const [breakpoints, setBreakpointsState] = useState<Map<string, number[]>>(new Map())

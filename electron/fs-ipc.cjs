@@ -227,6 +227,45 @@ function registerFsIpc() {
     return readLooseFileForWindow(wcId, result.filePaths[0])
   })
 
+  // Open a file path the user Cmd+clicked in an editor. The path is a raw renderer
+  // string, so it gets NO more authority than other renderer requests:
+  // - inside this window's workspace → return the realpath; the renderer then opens it
+  //   through the normal confined fs:read.
+  // - outside the workspace → main asks the user in a native dialog. Only an explicit
+  //   "Open" there makes it a loose file (same gate as the Open File dialog), so a
+  //   compromised renderer can at most show a prompt, never read a file silently.
+  // Returns null when the user cancels. Throws a readable message otherwise.
+  ipcMain.handle('fs:openLinkedPath', async (event, requestedPath) => {
+    assertString(requestedPath, 'path')
+    const wcId = event.sender.id
+    const abs = ws.expandTilde(requestedPath)
+    if (!path.isAbsolute(abs)) throw new Error(`Not an absolute path: ${requestedPath}`)
+    let real
+    try {
+      real = await fsp.realpath(abs)
+    } catch {
+      throw new Error(`File not found: ${requestedPath}`)
+    }
+    const st = await fsp.stat(real)
+    if (ws.isInsideRoot(wcId, real)) {
+      return { kind: st.isDirectory() ? 'dir' : 'file', path: real }
+    }
+    if (st.isDirectory()) throw new Error(`Folder is outside the workspace: ${requestedPath}`)
+    if (!st.isFile()) throw new Error(`Not a file: ${requestedPath}`)
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('Window is gone')
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Open', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Open a file outside this workspace?',
+      detail: real,
+    })
+    if (response !== 0) return null
+    return { kind: 'loose', file: await readLooseFileForWindow(wcId, real) }
+  })
+
   // Write back a loose file. Only permitted for a realpath the user actually opened
   // via the loose dialog IN THIS WINDOW — never an arbitrary renderer-supplied path,
   // and never a file another window opened loosely.

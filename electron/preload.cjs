@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('editorApi', {
   // Workspace
   openWorkspace: (dirPath) => ipcRenderer.invoke('ws:open', dirPath ?? null),
   openLooseFile: () => ipcRenderer.invoke('fs:openLooseFile'),
+  openLinkedPath: (filePath) => ipcRenderer.invoke('fs:openLinkedPath', filePath),
   currentWorkspace: () => ipcRenderer.invoke('ws:current'),
 
   // Filesystem (all confined to the open workspace root in the main process)
