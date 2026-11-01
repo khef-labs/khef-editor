@@ -342,8 +342,8 @@ export interface EditorApi {
   openWorkspace(dirPath?: string | null): Promise<OpenWorkspaceResult | null>
   openLooseFile(): Promise<ReadFileResult | null>
   // Cmd+clicked path in an editor. Inside the workspace → its realpath (open via readFile).
-  // Outside → main confirms in a native dialog; null when the user cancels.
-  openLinkedPath(filePath: string): Promise<LinkedPathResult | null>
+  // Outside → read by main as a loose file (no prompt).
+  openLinkedPath(filePath: string): Promise<LinkedPathResult>
   currentWorkspace(): Promise<CurrentWorkspaceResult>
   readFile(filePath: string): Promise<ReadFileResult>
   writeFile(filePath: string, content: string): Promise<WriteFileResult>

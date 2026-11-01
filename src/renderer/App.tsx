@@ -729,13 +729,11 @@ export function App() {
 
   // Cmd+click on a file path in an editor (lib/linkClick.ts). Main resolves the raw path:
   // a workspace file opens like any other, a workspace folder is revealed in the Explorer,
-  // and a file outside the workspace opens as a loose tab only after the user confirms
-  // main's native prompt (null = cancelled).
+  // and a file outside the workspace opens as a loose tab.
   useEffect(() => {
     setPathOpener((rawPath, line) => {
       setError(null)
       window.editorApi.openLinkedPath(rawPath).then((res) => {
-        if (!res) return
         if (res.kind === 'dir') { revealInExplorer(res.path); return }
         const filePath = res.kind === 'loose' ? res.file.path : res.path
         const name = filePath.split('/').pop() ?? filePath

@@ -227,14 +227,16 @@ function registerFsIpc() {
     return readLooseFileForWindow(wcId, result.filePaths[0])
   })
 
-  // Open a file path the user Cmd+clicked in an editor. The path is a raw renderer
-  // string, so it gets NO more authority than other renderer requests:
+  // Open a file path the user Cmd+clicked in an editor.
   // - inside this window's workspace → return the realpath; the renderer then opens it
   //   through the normal confined fs:read.
-  // - outside the workspace → main asks the user in a native dialog. Only an explicit
-  //   "Open" there makes it a loose file (same gate as the Open File dialog), so a
-  //   compromised renderer can at most show a prompt, never read a file silently.
-  // Returns null when the user cancels. Throws a readable message otherwise.
+  // - outside the workspace → read it as a loose file (realpath, regular file, size cap)
+  //   and add it to this window's loose allowlist so it can be saved back.
+  // SECURITY TRADE-OFF (chosen deliberately, 2026-11-01): there is no confirmation
+  // prompt, so this is the one handler where a raw renderer string can read a file
+  // outside the workspace. A compromised renderer could use it to read any regular file
+  // the user can read (up to the 2MB cap). Directories and non-files are refused.
+  // Throws a readable message on failure.
   ipcMain.handle('fs:openLinkedPath', async (event, requestedPath) => {
     assertString(requestedPath, 'path')
     const wcId = event.sender.id
@@ -252,17 +254,6 @@ function registerFsIpc() {
     }
     if (st.isDirectory()) throw new Error(`Folder is outside the workspace: ${requestedPath}`)
     if (!st.isFile()) throw new Error(`Not a file: ${requestedPath}`)
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) throw new Error('Window is gone')
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question',
-      buttons: ['Open', 'Cancel'],
-      defaultId: 0,
-      cancelId: 1,
-      message: 'Open a file outside this workspace?',
-      detail: real,
-    })
-    if (response !== 0) return null
     return { kind: 'loose', file: await readLooseFileForWindow(wcId, real) }
   })
 
