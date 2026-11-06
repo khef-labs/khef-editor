@@ -1159,8 +1159,9 @@ export function App() {
   }, [])
 
   // Bulk-close for the tab context menu: keep only tabs passing `keep`; collapse the pane
-  // when nothing remains (same last-tab semantics as closeTab above).
-  const closeTabsWhere = useCallback((leafId: string, keep: (t: OpenTab, i: number) => boolean) => {
+  // when nothing remains (same last-tab semantics as closeTab above). If the active tab
+  // closes, `fallbackPath` (when given) becomes active, otherwise the last tab left.
+  const closeTabsWhere = useCallback((leafId: string, keep: (t: OpenTab, i: number) => boolean, fallbackPath?: string) => {
     setTree((prev) => {
       const leaf = findLeaf(prev, leafId)
       if (!leaf) return prev
@@ -1175,7 +1176,9 @@ export function App() {
         const tabs = l.tabs.filter((t, i) => keep(t, i))
         const activePath = tabs.some((t) => t.path === l.activePath)
           ? l.activePath
-          : (tabs[tabs.length - 1]?.path ?? null)
+          : fallbackPath && tabs.some((t) => t.path === fallbackPath)
+            ? fallbackPath
+            : (tabs[tabs.length - 1]?.path ?? null)
         return { ...l, tabs, activePath }
       })
     })
@@ -1190,6 +1193,13 @@ export function App() {
     const idx = leaf?.tabs.findIndex((t) => t.path === path) ?? -1
     if (idx < 0) return
     closeTabsWhere(leafId, (_t, i) => i <= idx)
+  }, [closeTabsWhere])
+
+  const closeToTheLeft = useCallback((leafId: string, path: string) => {
+    const leaf = findLeaf(treeRef.current, leafId)
+    const idx = leaf?.tabs.findIndex((t) => t.path === path) ?? -1
+    if (idx < 0) return
+    closeTabsWhere(leafId, (_t, i) => i >= idx, path)
   }, [closeTabsWhere])
 
   // Close every tab whose content matches disk (VS Code "Close Saved"). Untitled buffers
@@ -1731,6 +1741,7 @@ export function App() {
         const entries: MenuEntry[] = [
           { kind: 'item', label: 'Close', hint: '⌘W', onClick: () => closeTab(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Close Others', disabled: menuLeaf.tabs.length < 2, onClick: () => closeOthers(menuLeaf.id, menuTab.path) },
+          { kind: 'item', label: 'Close to the Left', disabled: idx <= 0, onClick: () => closeToTheLeft(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Close to the Right', disabled: idx >= menuLeaf.tabs.length - 1, onClick: () => closeToTheRight(menuLeaf.id, menuTab.path) },
           { kind: 'item', label: 'Close Saved', onClick: () => closeSaved(menuLeaf.id) },
           { kind: 'item', label: 'Close All', onClick: () => closeAll(menuLeaf.id) },
