@@ -117,7 +117,7 @@ export function TabBar({ groupId, tabs, activePath, onActivate, onClose, onPromo
               data-testid={`tab-${t.name}`}
               data-path={t.path}
             >
-              <span class="tab-name">{t.name}</span>
+              <span class="tab-name">{t.name}{dirty && <span class="dirty-mark" title="Unsaved changes">*</span>}</span>
               <span
                 class="tab-close"
                 onClick={(e) => {

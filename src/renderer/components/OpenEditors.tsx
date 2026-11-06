@@ -50,7 +50,7 @@ export function OpenEditors({ leaves, activeLeafId, onActivate, onClose }: OpenE
                   <X size={13} class="x-icon" />
                   <span class="dirty-dot" />
                 </button>
-                <span class="open-editor-name">{tab.name}</span>
+                <span class="open-editor-name">{tab.name}{dirty && <span class="dirty-mark" title="Unsaved changes">*</span>}</span>
                 {dir && <span class="open-editor-dir">{dir}</span>}
               </div>
             )

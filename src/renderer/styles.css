@@ -475,6 +475,8 @@ html, body, #app {
   border-top: 1px solid var(--accent);
 }
 .tab-name { line-height: 1; }
+/* Asterisk after the name of a tab with unsaved changes (tab strip and Open Editors). */
+.dirty-mark { margin-left: 1px; font-weight: 600; color: var(--accent); }
 /* Ephemeral (VS Code "preview") tab: single-clicked in the Explorer, replaced on the next
    single-click. Shown italic until promoted (double-click / edit). */
 .tab.ephemeral .tab-name { font-style: italic; }
