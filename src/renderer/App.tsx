@@ -3,6 +3,7 @@ import { Files, Search as SearchIcon, GitBranch, Settings, FilePlus, FolderPlus,
 import type { FsTreeEntry, FileListEntry, LaunchOpenRequest, GitBlameRun } from '../../electron/types'
 import { FileTree, NewEntryRow } from './components/FileTree'
 import { QuickOpen } from './components/QuickOpen'
+import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SearchPanel } from './components/SearchPanel'
 import { PaneTree } from './components/PaneTree'
@@ -39,6 +40,9 @@ export function App() {
   const [activeLeafId, setActiveLeafId] = useState<string>(() => '')
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [formatRequest, setFormatRequest] = useState<{ leafId: string; path: string; token: number } | null>(null)
+  const formatSeq = useRef(0)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm' | 'debug'>('explorer')
   const [scmRefresh, setScmRefresh] = useState(0)
   const [recentFolders, setRecentFolders] = useState<string[]>([])
@@ -1328,6 +1332,14 @@ export function App() {
     if (leaf?.activePath) void saveTab(leaf.id, leaf.activePath)
   }, [saveTab])
 
+  const formatFocused = useCallback(() => {
+    const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
+    const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
+    if (!leaf || !tab || (tab.kind && tab.kind !== 'editor') || !tab.name.toLowerCase().endsWith('.json')) return
+    setError(null)
+    setFormatRequest({ leafId: leaf.id, path: tab.path, token: ++formatSeq.current })
+  }, [])
+
   const closeFocusedTab = useCallback(() => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     if (leaf?.activePath) closeTab(leaf.id, leaf.activePath)
@@ -1392,7 +1404,9 @@ export function App() {
     const offOpenLaunch = window.editorApi.onMenu('menu:open-launch', (request) => openLaunchRequest(request))
     const offOpen = window.editorApi.onMenu('menu:open-folder', () => void openFolder())
     const offSave = window.editorApi.onMenu('menu:save', () => saveFocused())
-    const offQuick = window.editorApi.onMenu('menu:quick-open', () => setQuickOpen((v) => !v))
+    const offQuick = window.editorApi.onMenu('menu:quick-open', () => { setCommandPaletteOpen(false); if (rootRef.current) setQuickOpen((v) => !v) })
+    const offCommands = window.editorApi.onMenu('menu:command-palette', () => { setQuickOpen(false); setCommandPaletteOpen((v) => !v) })
+    const offFormat = window.editorApi.onMenu('menu:format-document', formatFocused)
     const offSettings = window.editorApi.onMenu('menu:settings', () => setSettingsOpen((v) => !v))
     const offCloseTab = window.editorApi.onMenu('menu:close-tab', () => closeFocusedTab())
     const offSplit = window.editorApi.onMenu('menu:split', () => splitFocused('row'))
@@ -1415,8 +1429,8 @@ export function App() {
     const offTestRunFile = window.editorApi.onMenu('menu:test-run-file', () => startTests('file', true))
     const offTestDbgAll = window.editorApi.onMenu('menu:test-debug-all', () => startTests('all', false))
     const offTestRunAll = window.editorApi.onMenu('menu:test-run-all', () => startTests('all', true))
-    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile(); offTestDbgFile(); offTestRunFile(); offTestDbgAll(); offTestRunAll(); offToggleBlame() }
-  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile, startTests, toggleBlame])
+    return () => { offOpenFile(); offNewFile(); offOpenLoose(); offOpenLaunch(); offOpen(); offSave(); offQuick(); offCommands(); offFormat(); offSettings(); offCloseTab(); offSplit(); offToggleSidebar(); offSearch(); offPreview(); offOpenRecent(); offClearRecent(); offDbgStart(); offDbgStop(); offDbgOver(); offDbgIn(); offDbgOut(); offRunFile(); offTestDbgFile(); offTestRunFile(); offTestDbgAll(); offTestRunAll(); offToggleBlame() }
+  }, [openFileViaDialog, newUntitled, openLoosePayload, openLaunchRequest, openFolder, saveFocused, formatFocused, closeFocusedTab, splitFocused, toggleSidebar, openSearchView, openPreviewToSide, startOrContinueDebug, stopDebug, debugStep, runPythonFile, startTests, toggleBlame])
 
   // Emacs-style C-x prefix chord handling for pane commands, plus Cmd+P.
   const prefixRef = useRef(false)
@@ -1426,7 +1440,8 @@ export function App() {
       // Emacs cursor-up binding.
       if (e.metaKey && !e.ctrlKey && e.key === 'p' && !e.altKey) {
         e.preventDefault()
-        if (root) setQuickOpen((v) => !v)
+        if (e.shiftKey) { setQuickOpen(false); setCommandPaletteOpen((v) => !v) }
+        else if (root) { setCommandPaletteOpen(false); setQuickOpen((v) => !v) }
         return
       }
       // Cmd+Opt+Left/Right — switch to the previous/next tab in the focused pane.
@@ -1485,6 +1500,17 @@ export function App() {
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
+  const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && focusedTab.name.toLowerCase().endsWith('.json')
+  const commands: PaletteCommand[] = [
+    { id: 'format', label: 'Format Document', hint: '⇧⌥⌘F', disabled: !canFormatJson, run: formatFocused },
+    { id: 'open-file', label: 'Open File', hint: '⌘O', run: () => void openFileViaDialog() },
+    { id: 'open-folder', label: 'Open Folder', hint: '⇧⌘O', run: () => void openFolder() },
+    { id: 'quick-open', label: 'Quick Open', hint: '⌘P', disabled: !root, run: () => setQuickOpen(true) },
+    { id: 'save', label: 'Save', hint: '⌘S', disabled: !focusedTab || !!(focusedTab.kind && focusedTab.kind !== 'editor'), run: saveFocused },
+    { id: 'search', label: 'Search in Files', hint: '⇧⌘F', disabled: !root, run: openSearchView },
+    { id: 'settings', label: 'Settings', hint: '⌘,', run: () => setSettingsOpen(true) },
+    { id: 'sidebar', label: 'Toggle Sidebar', hint: '⌘B', run: toggleSidebar },
+  ]
   const treeActivePath = focusedLeaf?.activePath ?? null
   const paneCount = allLeaves.length
 
@@ -1673,6 +1699,9 @@ export function App() {
               activeLeafId={activeLeafId}
               themeId={themeId}
               gotoLine={pendingJump}
+              formatRequest={formatRequest}
+              onFormatError={setError}
+              onFormatDone={() => setFormatRequest(null)}
               breakpoints={breakpoints}
               onToggleBreakpoint={toggleBreakpoint}
               debugStopped={debugStopped}
@@ -1720,6 +1749,7 @@ export function App() {
       {quickOpen && root && (
         <QuickOpen onPick={pickQuickOpen} onClose={() => setQuickOpen(false)} />
       )}
+      {commandPaletteOpen && <CommandPalette commands={commands} onClose={() => setCommandPaletteOpen(false)} />}
 
       {tabMenu && (() => {
         const menuLeaf = findLeaf(tree, tabMenu.leafId)

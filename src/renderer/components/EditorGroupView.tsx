@@ -16,6 +16,9 @@ interface EditorGroupViewProps {
   isFocused: boolean
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
+  formatToken?: number
+  onFormatError?: (message: string) => void
+  onFormatDone?: () => void
   // Debugging: breakpoint lines per absolute file path, gutter-click toggle, and where
   // execution is stopped (highlight shown only in the matching file's editor).
   breakpoints: Map<string, number[]>
@@ -47,7 +50,7 @@ interface EditorGroupViewProps {
 }
 
 export function EditorGroupView({
-  group, isFocused, themeId, gotoLine, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
+  group, isFocused, themeId, gotoLine, formatToken, onFormatError, onFormatDone, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave,
   onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, blames, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
@@ -97,6 +100,9 @@ export function EditorGroupView({
               value={activeTab.content}
               themeKey={themeById(themeId).editorTheme}
               gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
+              formatToken={formatToken}
+              onFormatError={onFormatError}
+              onFormatDone={onFormatDone}
               breakpoints={breakpoints.get(activeTab.path)}
               blame={blames.get(activeTab.path) ?? null}
               onToggleBreakpoint={(line) => onToggleBreakpoint(activeTab.path, line)}

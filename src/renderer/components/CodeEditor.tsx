@@ -26,6 +26,7 @@ import { blameGutter, setBlameEffect } from '../lib/blameGutter'
 import type { GitBlameRun } from '../../../electron/types'
 import { editorThemeExtension } from '../lib/editorTheme'
 import { linkClick } from '../lib/linkClick'
+import { formatJson } from '../lib/formatJson'
 import type { EditorThemeKey } from '../lib/themes'
 
 // Overview-ruler cursor marker: a small tick on the editor's right edge showing where
@@ -96,6 +97,9 @@ interface CodeEditorProps {
   themeKey: EditorThemeKey
   // A jump request: { line, token } — bump `token` to re-trigger a jump to the same line.
   gotoLine?: { line: number; token: number } | null
+  formatToken?: number
+  onFormatError?: (message: string) => void
+  onFormatDone?: () => void
   onChange: (value: string) => void
   onSave: (content?: string) => void
   // Debugging: this file's breakpoint lines (1-based), a gutter-click toggle callback,
@@ -221,7 +225,7 @@ function extendSelection(view: EditorView, move: (range: SelectionRange) => Sele
   return true
 }
 
-export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine, blame }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatToken, onFormatError, onFormatDone, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine, blame }: CodeEditorProps) {
   const blameComp = useRef(new Compartment())
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -854,6 +858,24 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, onChange
     })
     view.focus()
   }, [gotoLine?.token])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !formatToken || !filename.toLowerCase().endsWith('.json')) return
+    const source = view.state.doc.toString()
+    try {
+      const formatted = formatJson(source)
+      if (formatted !== source) {
+        const head = Math.min(view.state.selection.main.head, formatted.length)
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted }, selection: { anchor: head } })
+      }
+      view.focus()
+    } catch (error) {
+      onFormatError?.(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      onFormatDone?.()
+    }
+  }, [formatToken])
 
   return (
     <div class="cm-host-wrap">

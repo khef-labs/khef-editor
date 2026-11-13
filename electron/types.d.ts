@@ -313,7 +313,7 @@ export interface GitApi {
   fileDiff(args: { mode: 'working' | 'staged' | 'commit' | 'range'; file: string; hash?: string }): Promise<GitFileDiff>
 }
 
-export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file' | 'menu:test-run-file' | 'menu:test-debug-file' | 'menu:test-run-all' | 'menu:test-debug-all' | 'menu:toggle-blame'
+export type MenuChannel = 'menu:open-folder' | 'menu:open-file' | 'menu:new-file' | 'menu:save' | 'menu:quick-open' | 'menu:command-palette' | 'menu:format-document' | 'menu:settings' | 'menu:close-tab' | 'menu:split' | 'menu:toggle-sidebar' | 'menu:search' | 'menu:preview-side' | 'menu:open-recent' | 'menu:clear-recent' | 'menu:open-loose' | 'menu:open-launch' | 'menu:debug-start' | 'menu:debug-stop' | 'menu:debug-step-over' | 'menu:debug-step-in' | 'menu:debug-step-out' | 'menu:run-file' | 'menu:test-run-file' | 'menu:test-debug-file' | 'menu:test-run-all' | 'menu:test-debug-all' | 'menu:toggle-blame'
 
 // Result of saving an untitled buffer via the native Save-As dialog. `loose` is true when
 // the file was written outside the workspace root (subsequent saves go through the loose gate).

@@ -10,6 +10,9 @@ interface PaneTreeProps {
   activeLeafId: string
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
+  formatRequest?: { leafId: string; path: string; token: number } | null
+  onFormatError?: (message: string) => void
+  onFormatDone?: () => void
   breakpoints: Map<string, number[]>
   // Git blame runs per absolute file path (only files with blame enabled + loaded).
   blames: Map<string, import('../../../electron/types').GitBlameRun[]>
@@ -138,7 +141,7 @@ function Divider({ orientation, onDrag }: DividerProps) {
   )
 }
 
-function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, blames, onToggleBreakpoint, debugStopped, debugConsole, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
+function Leaf({ leaf, activeLeafId, themeId, gotoLine, formatRequest, onFormatError, onFormatDone, breakpoints, blames, onToggleBreakpoint, debugStopped, debugConsole, onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave, onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile }:
   PaneTreeProps & { leaf: LeafNode }) {
   const group = { id: leaf.id, tabs: leaf.tabs as OpenTab[], activePath: leaf.activePath }
   return (
@@ -147,6 +150,9 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, breakpoints, blames, onTo
       isFocused={leaf.id === activeLeafId}
       themeId={themeId}
       gotoLine={gotoLine}
+      formatToken={formatRequest?.leafId === leaf.id && formatRequest.path === leaf.activePath ? formatRequest.token : undefined}
+      onFormatError={onFormatError}
+      onFormatDone={onFormatDone}
       breakpoints={breakpoints}
       blames={blames}
       onToggleBreakpoint={onToggleBreakpoint}

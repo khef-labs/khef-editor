@@ -466,7 +466,15 @@ function buildMenu(recentFolders = [], recentFiles = []) {
         },
       ],
     },
-    { role: 'editMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+        { type: 'separator' },
+        { label: 'Format Document', accelerator: 'Shift+Alt+CmdOrCtrl+F', click: () => sendToFocused('menu:format-document') },
+      ],
+    },
     {
       label: 'View',
       submenu: [
@@ -474,6 +482,11 @@ function buildMenu(recentFolders = [], recentFiles = []) {
           label: 'Quick Open…',
           accelerator: 'Cmd+P', // Cmd only — Ctrl+P is the editor's Emacs cursor-up
           click: () => sendToFocused('menu:quick-open'),
+        },
+        {
+          label: 'Command Palette…',
+          accelerator: 'Shift+Cmd+P',
+          click: () => sendToFocused('menu:command-palette'),
         },
         {
           label: 'Open Preview to the Side',

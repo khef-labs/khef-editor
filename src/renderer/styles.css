@@ -973,6 +973,7 @@ html, body, #app {
   overflow: hidden;
 }
 .qo-item.selected { background: var(--row-active); }
+.qo-item.disabled { opacity: 0.45; cursor: default; }
 .qo-name { color: var(--fg); font-size: 13px; }
 .qo-name b { color: #fff; font-weight: 700; }
 .qo-dir {
