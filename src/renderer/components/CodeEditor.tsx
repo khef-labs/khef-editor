@@ -26,7 +26,7 @@ import { blameGutter, setBlameEffect } from '../lib/blameGutter'
 import type { GitBlameRun } from '../../../electron/types'
 import { editorThemeExtension } from '../lib/editorTheme'
 import { linkClick } from '../lib/linkClick'
-import { formatJson } from '../lib/formatJson'
+import { formatJson, formatJsonc } from '../lib/formatJson'
 import type { EditorThemeKey } from '../lib/themes'
 
 // Overview-ruler cursor marker: a small tick on the editor's right edge showing where
@@ -861,17 +861,18 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatTo
 
   useEffect(() => {
     const view = viewRef.current
-    if (!view || !formatToken || !filename.toLowerCase().endsWith('.json')) return
+    const jsonc = filename.toLowerCase().endsWith('.jsonc')
+    if (!view || !formatToken || (!jsonc && !filename.toLowerCase().endsWith('.json'))) return
     const source = view.state.doc.toString()
     try {
-      const formatted = formatJson(source)
+      const formatted = jsonc ? formatJsonc(source) : formatJson(source)
       if (formatted !== source) {
         const head = Math.min(view.state.selection.main.head, formatted.length)
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted }, selection: { anchor: head } })
       }
       view.focus()
     } catch (error) {
-      onFormatError?.(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
+      onFormatError?.(`Invalid ${jsonc ? 'JSONC' : 'JSON'}: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       onFormatDone?.()
     }

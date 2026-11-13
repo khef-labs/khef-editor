@@ -1335,7 +1335,7 @@ export function App() {
   const formatFocused = useCallback(() => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
-    if (!leaf || !tab || (tab.kind && tab.kind !== 'editor') || !tab.name.toLowerCase().endsWith('.json')) return
+    if (!leaf || !tab || (tab.kind && tab.kind !== 'editor') || !/\.jsonc?$/i.test(tab.name)) return
     setError(null)
     setFormatRequest({ leafId: leaf.id, path: tab.path, token: ++formatSeq.current })
   }, [])
@@ -1500,7 +1500,7 @@ export function App() {
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
-  const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && focusedTab.name.toLowerCase().endsWith('.json')
+  const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && /\.jsonc?$/i.test(focusedTab.name)
   const commands: PaletteCommand[] = [
     { id: 'format', label: 'Format Document', hint: '⇧⌥⌘F', disabled: !canFormatJson, run: formatFocused },
     { id: 'open-file', label: 'Open File', hint: '⌘O', run: () => void openFileViaDialog() },
