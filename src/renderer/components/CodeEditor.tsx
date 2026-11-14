@@ -97,7 +97,7 @@ interface CodeEditorProps {
   themeKey: EditorThemeKey
   // A jump request: { line, token } — bump `token` to re-trigger a jump to the same line.
   gotoLine?: { line: number; token: number } | null
-  formatToken?: number
+  formatRequest?: { kind: 'json' | 'jsonc'; token: number } | null
   onFormatError?: (message: string) => void
   onFormatDone?: () => void
   onChange: (value: string) => void
@@ -225,7 +225,7 @@ function extendSelection(view: EditorView, move: (range: SelectionRange) => Sele
   return true
 }
 
-export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatToken, onFormatError, onFormatDone, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine, blame }: CodeEditorProps) {
+export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatRequest, onFormatError, onFormatDone, onChange, onSave, onUserEdit, breakpoints, onToggleBreakpoint, stoppedLine, blame }: CodeEditorProps) {
   const blameComp = useRef(new Compartment())
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -861,8 +861,8 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatTo
 
   useEffect(() => {
     const view = viewRef.current
-    const jsonc = filename.toLowerCase().endsWith('.jsonc')
-    if (!view || !formatToken || (!jsonc && !filename.toLowerCase().endsWith('.json'))) return
+    if (!view || !formatRequest) return
+    const jsonc = formatRequest.kind === 'jsonc'
     const source = view.state.doc.toString()
     try {
       const formatted = jsonc ? formatJsonc(source) : formatJson(source)
@@ -876,7 +876,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatTo
     } finally {
       onFormatDone?.()
     }
-  }, [formatToken])
+  }, [formatRequest?.token])
 
   return (
     <div class="cm-host-wrap">

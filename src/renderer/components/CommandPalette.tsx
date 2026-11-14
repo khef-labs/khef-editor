@@ -9,7 +9,7 @@ export interface PaletteCommand {
   run: () => void
 }
 
-export function CommandPalette({ commands, onClose }: { commands: PaletteCommand[]; onClose: () => void }) {
+export function CommandPalette({ commands, onClose, placeholder = 'Search commands…' }: { commands: PaletteCommand[]; onClose: () => void; placeholder?: string }) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -29,7 +29,7 @@ export function CommandPalette({ commands, onClose }: { commands: PaletteCommand
 
   return <div class="qo-backdrop" onMouseDown={onClose}>
     <div class="qo-panel" data-testid="command-palette" onMouseDown={(e) => e.stopPropagation()}>
-      <input ref={inputRef} class="qo-input" placeholder="Search commands…" value={query}
+      <input ref={inputRef} class="qo-input" placeholder={placeholder} value={query}
         onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { e.preventDefault(); onClose() }

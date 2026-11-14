@@ -16,7 +16,7 @@ interface EditorGroupViewProps {
   isFocused: boolean
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
-  formatToken?: number
+  formatRequest?: { kind: 'json' | 'jsonc'; token: number } | null
   onFormatError?: (message: string) => void
   onFormatDone?: () => void
   // Debugging: breakpoint lines per absolute file path, gutter-click toggle, and where
@@ -50,7 +50,7 @@ interface EditorGroupViewProps {
 }
 
 export function EditorGroupView({
-  group, isFocused, themeId, gotoLine, formatToken, onFormatError, onFormatDone, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
+  group, isFocused, themeId, gotoLine, formatRequest, onFormatError, onFormatDone, breakpoints, onToggleBreakpoint, debugStopped, debugConsole,
   onFocus, onActivateTab, onCloseTab, onChangeContent, onUserEdit, onPromoteTab, onTabContextMenu, onPreviewTab, onSplitRightTab, onDropTab, onSave,
   onOpenFolder, onOpenFile, onOpenRepoFile, onOpenDiff, onOpenReview, blames, onOpenSettings, recentFolders, onOpenRecent, recentFiles, onOpenRecentFile,
 }: EditorGroupViewProps) {
@@ -100,7 +100,7 @@ export function EditorGroupView({
               value={activeTab.content}
               themeKey={themeById(themeId).editorTheme}
               gotoLine={gotoLine && gotoLine.path === activeTab.path ? { line: gotoLine.line, token: gotoLine.token } : null}
-              formatToken={formatToken}
+              formatRequest={formatRequest}
               onFormatError={onFormatError}
               onFormatDone={onFormatDone}
               breakpoints={breakpoints.get(activeTab.path)}

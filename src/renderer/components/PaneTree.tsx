@@ -10,7 +10,7 @@ interface PaneTreeProps {
   activeLeafId: string
   themeId: string
   gotoLine?: { path: string; line: number; token: number } | null
-  formatRequest?: { leafId: string; path: string; token: number } | null
+  formatRequest?: { leafId: string; path: string; kind: 'json' | 'jsonc'; token: number } | null
   onFormatError?: (message: string) => void
   onFormatDone?: () => void
   breakpoints: Map<string, number[]>
@@ -150,7 +150,7 @@ function Leaf({ leaf, activeLeafId, themeId, gotoLine, formatRequest, onFormatEr
       isFocused={leaf.id === activeLeafId}
       themeId={themeId}
       gotoLine={gotoLine}
-      formatToken={formatRequest?.leafId === leaf.id && formatRequest.path === leaf.activePath ? formatRequest.token : undefined}
+      formatRequest={formatRequest?.leafId === leaf.id && formatRequest.path === leaf.activePath ? formatRequest : null}
       onFormatError={onFormatError}
       onFormatDone={onFormatDone}
       breakpoints={breakpoints}

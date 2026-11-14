@@ -41,7 +41,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
-  const [formatRequest, setFormatRequest] = useState<{ leafId: string; path: string; token: number } | null>(null)
+  const [formatChoice, setFormatChoice] = useState<{ leafId: string; path: string } | null>(null)
+  const [formatRequest, setFormatRequest] = useState<{ leafId: string; path: string; kind: 'json' | 'jsonc'; token: number } | null>(null)
   const formatSeq = useRef(0)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search' | 'scm' | 'debug'>('explorer')
   const [scmRefresh, setScmRefresh] = useState(0)
@@ -1335,10 +1336,26 @@ export function App() {
   const formatFocused = useCallback(() => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
     const tab = leaf?.tabs.find((t) => t.path === leaf.activePath)
-    if (!leaf || !tab || (tab.kind && tab.kind !== 'editor') || !/\.jsonc?$/i.test(tab.name)) return
+    if (!leaf || !tab || (tab.kind && tab.kind !== 'editor')) return
+    if (tab.untitled) {
+      setFormatChoice({ leafId: leaf.id, path: tab.path })
+      return
+    }
+    if (!/\.jsonc?$/i.test(tab.name)) return
     setError(null)
-    setFormatRequest({ leafId: leaf.id, path: tab.path, token: ++formatSeq.current })
+    setFormatRequest({ leafId: leaf.id, path: tab.path, kind: /\.jsonc$/i.test(tab.name) ? 'jsonc' : 'json', token: ++formatSeq.current })
   }, [])
+
+  const formatUntitled = useCallback((kind: 'json' | 'jsonc') => {
+    const target = formatChoice
+    if (!target) return
+    setFormatChoice(null)
+    const leaf = findLeaf(treeRef.current, target.leafId)
+    const tab = leaf?.tabs.find((t) => t.path === target.path)
+    if (!tab?.untitled || leaf?.activePath !== target.path) return
+    setError(null)
+    setFormatRequest({ ...target, kind, token: ++formatSeq.current })
+  }, [formatChoice])
 
   const closeFocusedTab = useCallback(() => {
     const leaf = findLeaf(treeRef.current, activeLeafIdRef.current)
@@ -1500,7 +1517,7 @@ export function App() {
   const allLeaves = leaves(tree)
   const focusedLeaf = findLeaf(tree, activeLeafId) ?? allLeaves[0]
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
-  const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && /\.jsonc?$/i.test(focusedTab.name)
+  const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && (focusedTab.untitled || /\.jsonc?$/i.test(focusedTab.name))
   const commands: PaletteCommand[] = [
     { id: 'format', label: 'Format Document', hint: '⇧⌥⌘F', disabled: !canFormatJson, run: formatFocused },
     { id: 'open-file', label: 'Open File', hint: '⌘O', run: () => void openFileViaDialog() },
@@ -1750,6 +1767,14 @@ export function App() {
         <QuickOpen onPick={pickQuickOpen} onClose={() => setQuickOpen(false)} />
       )}
       {commandPaletteOpen && <CommandPalette commands={commands} onClose={() => setCommandPaletteOpen(false)} />}
+      {formatChoice && <CommandPalette
+        commands={[
+          { id: 'json', label: 'Format as JSON', run: () => formatUntitled('json') },
+          { id: 'jsonc', label: 'Format as JSONC', run: () => formatUntitled('jsonc') },
+        ]}
+        placeholder="Choose a format…"
+        onClose={() => setFormatChoice(null)}
+      />}
 
       {tabMenu && (() => {
         const menuLeaf = findLeaf(tree, tabMenu.leafId)
