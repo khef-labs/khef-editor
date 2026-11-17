@@ -54,21 +54,22 @@
     "jsonc-parser": "^3.3.1",
     "lucide-preact": "^1.22.0",
     "marked": "^18.0.5",
-    "mermaid": "^11.16.0",
+    "mermaid": "^12.2.0",
     "preact": "^10.25.3"
   },
   "engines": {
-    "node": ">=22",
+    "node": ">=22.12.0",
     "npm": ">=10"
   },
   "overrides": {
-    "@electron/asar": "^4.2.1",
+    "@electron/asar": "^4.3.2",
     "@electron/universal": "^3.0.6",
     "dir-compare": "^5.0.0",
     "filelist": "^2.0.2",
     "electron-winstaller": {
       "temp": "file:./stubs/temp"
-    }
+    },
+    "minimatch": "^11.0.1"
   },
   "build": {
     "appId": "ai.khef.editor",

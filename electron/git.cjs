@@ -8,6 +8,8 @@
 //   - `-c core.fsmonitor=false` and `--no-optional-locks` so reads never spawn watchers
 //     or take locks.
 //   - `--no-pager` so nothing tries to launch a pager.
+//   - Disable textconv and external diff programs on every diff-capable read. In
+//     particular, blame enables repository-configured textconv commands by default.
 // Only read subcommands are exposed (status/log/show/diff). There is NO write path —
 // nothing here stages, commits, pushes, or mutates the repo.
 
@@ -32,8 +34,14 @@ const HARDENING = [
 function runGit(wcId, args) {
   const root = ws.getWorkspaceRoot(wcId)
   if (!root) return Promise.reject(new Error('No workspace open'))
+  const [command, ...rest] = args
+  const safeArgs = command === 'blame'
+    ? [command, '--no-textconv', ...rest]
+    : ['log', 'show', 'diff'].includes(command)
+      ? [command, '--no-ext-diff', '--no-textconv', ...rest]
+      : args
   return new Promise((resolve, reject) => {
-    execFile('git', [...HARDENING, ...args], {
+    execFile('git', [...HARDENING, ...safeArgs], {
       cwd: root,
       timeout: GIT_TIMEOUT,
       maxBuffer: MAX_BUFFER,

@@ -91,3 +91,18 @@ See `ctx-security-pre-analysis` (khef memory, project `khef-editor`) for the ful
 - Renderer cannot touch Node/`fs`/`child_process` directly.
 - All fs paths are confined to the open workspace root, verified on realpath — symlinks cannot escape.
 - Strict CSP: no remote script, no eval (prod).
+
+Dependency maintenance requires Node >=22.12.0. The `@electron/asar` override keeps
+the packaging tool on a release with patched glob/minimatch dependencies. The
+`minimatch` override also covers electron-builder and filelist, whose current
+releases still require vulnerable minimatch 10.x. Remove these overrides when
+their upstream dependencies adopt the patched versions; verify packaging when
+changing them.
+
+As of 2026-11-17, development dependencies still include picomatch 2.3.2 and 4.0.4,
+affected by [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
+No patched release is available. This affects glob matching in Vite, its plugins,
+and packaging tools, rather than the packaged editor's production dependencies.
+Keep build/configuration glob patterns trusted until upstream ships a fix, then
+update every affected path and rerun the full audit. Production-only audit results
+do not cover these tools.
