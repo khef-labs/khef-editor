@@ -17,7 +17,7 @@ import { reviewNotesStore } from './lib/reviewNotesStore'
 // The one Debug Console tab per window (synthetic path, kind 'console').
 const CONSOLE_PATH = 'debug-console://main'
 import { ContextMenu, type MenuEntry } from './components/ContextMenu'
-import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor } from './components/CodeEditor'
+import { selectAllInActiveEditor, setSelectionStatusListener, searchSeedFromActiveEditor, resetActiveEditorRendering } from './components/CodeEditor'
 import { themeById, applyTheme } from './lib/themes'
 import { windowTitle } from './lib/windowTitle'
 import { setPathOpener } from './lib/linkClick'
@@ -1519,6 +1519,7 @@ export function App() {
   const focusedTab = focusedLeaf?.tabs.find((t) => t.path === focusedLeaf.activePath) ?? null
   const canFormatJson = !!focusedTab && (!focusedTab.kind || focusedTab.kind === 'editor') && (focusedTab.untitled || /\.jsonc?$/i.test(focusedTab.name))
   const commands: PaletteCommand[] = [
+    { id: 'reset-editor-rendering', label: 'Reset Editor Rendering', disabled: !focusedTab || !!(focusedTab.kind && focusedTab.kind !== 'editor'), run: () => { resetActiveEditorRendering() } },
     { id: 'format', label: 'Format Document', hint: '⇧⌥⌘F', disabled: !canFormatJson, run: formatFocused },
     { id: 'open-file', label: 'Open File', hint: '⌘O', run: () => void openFileViaDialog() },
     { id: 'open-folder', label: 'Open Folder', hint: '⇧⌘O', run: () => void openFolder() },

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'preact/hooks'
 import { EditorState, Compartment, EditorSelection, Prec, Annotation, Transaction, type SelectionRange, type Text } from '@codemirror/state'
-import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
+import { EditorView, ViewPlugin, keymap, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
 import {
   search, setSearchQuery, SearchQuery, findNext, findPrevious, replaceNext, replaceAll,
@@ -28,6 +28,7 @@ import { editorThemeExtension } from '../lib/editorTheme'
 import { linkClick } from '../lib/linkClick'
 import { formatJson, formatJsonc } from '../lib/formatJson'
 import type { EditorThemeKey } from '../lib/themes'
+import { alignedLineNumbers, resetEditorRendering } from '../lib/editorGeometry'
 
 // Overview-ruler cursor marker: a small tick on the editor's right edge showing where
 // the cursor line sits within the whole document (VS Code's scrollbar cursor marker).
@@ -139,6 +140,12 @@ let killRing = ''
 // The most-recently-focused editor view, so app-level chords (e.g. C-x h select-all)
 // can target the active editor.
 let activeEditorView: EditorView | null = null
+
+export function resetActiveEditorRendering(): boolean {
+  if (!activeEditorView) return false
+  resetEditorRendering(activeEditorView)
+  return true
+}
 
 export function selectAllInActiveEditor(): boolean {
   const view = activeEditorView
@@ -605,7 +612,7 @@ export function CodeEditor({ path, filename, value, themeKey, gotoLine, formatRe
         breakpointGutter((line) => onToggleBreakpointRef.current?.(line)),
         stoppedLineField,
         blameComp.current.of([]),
-        lineNumbers(),
+        alignedLineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
         // Tag the editor with .cm-has-selection whenever a selection exists. drawSelection()

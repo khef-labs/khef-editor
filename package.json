@@ -13,6 +13,7 @@
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --experimental-strip-types --test 'tests/**/*.test.ts'",
+    "test:editor-geometry": "npm run build && node tests/editorGeometry.browser.mjs",
     "package": "npm run build && electron-builder --mac dir --publish never -c.mac.identity=null",
     "package:universal": "npm run build && electron-builder --mac dir --universal --publish never -c.mac.identity=null",
     "install:app": "bash scripts/install-app.sh",

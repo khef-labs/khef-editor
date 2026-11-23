@@ -84,6 +84,20 @@ Use `npm run dist` to produce a DMG instead of a raw `.app`.
   ```
 - Output path assumes **Apple Silicon** (`mac-arm64`). On Intel, electron-builder emits `mac` (x64) — adjust the paths above accordingly.
 
+## Editor rendering recovery
+
+If text, selection, or line numbers render incorrectly, open the command palette
+with Cmd+Shift+P and run **Reset Editor Rendering**. This redraws the editor while
+preserving unsaved text, undo history, selection, and the visible document position.
+Misaligned line numbers are also checked and refreshed automatically after layout
+changes.
+
+Run `npm run test:editor-geometry` on macOS to exercise wrapping, document switching,
+viewport resizing/scaling, and rendering recovery in a separate Electron test
+window. It uses its own profile and scratch files under `shadow/`, then closes the
+test process. The regular `npm test` command runs the unit suite without opening a
+window.
+
 ## Security
 
 See `ctx-security-pre-analysis` (khef memory, project `khef-editor`) for the full threat model. Key invariants enforced in the scaffold:
